@@ -6,6 +6,8 @@ export class AccountManagementResponseDTO {
   GroupId: string;
   GroupName: string;
   CreatedAt: string;
+  ClassId: string;
+  ClassName:string;
 
   constructor({
     UserName,
@@ -15,6 +17,8 @@ export class AccountManagementResponseDTO {
     GroupId,
     GroupName,
     CreatedAt,
+    ClassId,
+    ClassName
   }: {
     UserName: string;
     FullName: string;
@@ -23,6 +27,8 @@ export class AccountManagementResponseDTO {
     GroupId: string;
     GroupName: string;
     CreatedAt: string;
+    ClassId:string;
+    ClassName:string;
   }) {
     this.UserName = UserName;
     this.FullName = FullName;
@@ -31,6 +37,8 @@ export class AccountManagementResponseDTO {
     this.GroupId = GroupId;
     this.GroupName = GroupName;
     this.CreatedAt = CreatedAt;
+    this.ClassId = ClassId;
+    this.ClassName = ClassName;
   }
 
   static fromJson(json: any): AccountManagementResponseDTO {
@@ -42,6 +50,8 @@ export class AccountManagementResponseDTO {
       GroupId: json.GroupId,
       GroupName: json.GroupName,
       CreatedAt: json.CreatedAt,
+      ClassId:json.ClassId ?? "",
+      ClassName:json.ClassName ?? ""
     });
   }
 }

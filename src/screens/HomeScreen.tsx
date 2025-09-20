@@ -1,116 +1,57 @@
-import React, { useState } from 'react';
+// src/screens/HomeScreen.tsx
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   ScrollView,
   Image,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useDispatch, useSelector } from 'react-redux';
-import { logout } from '../store/slices/authSlice';
-import { RootState, AppDispatch } from '../store';
-import Modal from 'react-native-modal';
-import Icon from 'react-native-vector-icons/Ionicons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { format, addDays, isToday, startOfWeek, addWeeks, subWeeks, isSameDay } from 'date-fns';
-import DateTimePickerModal from 'react-native-modal-datetime-picker';
-import { vi } from 'date-fns/locale';
+  TextInput,
+  Alert,
+  RefreshControl,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useDispatch, useSelector } from "react-redux";
+import { logout } from "../store/slices/authSlice";
+import { RootState, AppDispatch } from "../store";
+import Modal from "react-native-modal";
+import Icon from "react-native-vector-icons/Ionicons";
+import { LinearGradient } from "expo-linear-gradient";
+import {
+  parse,
+  isValid,
+  format,
+  addDays,
+  isToday,
+  startOfWeek,
+  addWeeks,
+  subWeeks,
+  getDay,
+} from "date-fns";
+import { toZonedTime, formatInTimeZone } from "date-fns-tz";
+import DateTimePickerModal from "react-native-modal-datetime-picker";
+import { vi } from "date-fns/locale";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/types";
+import { createSchedule, fetchSchedules } from "../store/slices/scheduleSlice";
+import { fetchTeachersByClassId } from "../store/slices/teacherClassSlice";
+import { TeacherClassResponseDTO } from "../domain/entities/TeacherClassDTO/TeacherClassResponseDTO";
+import DropDownPicker from "react-native-dropdown-picker";
 
 type AuthNav = NativeStackNavigationProp<RootStackParamList, "Home">;
 
-
-// Interfaces
-interface DateItemProps {
-  date: string;
-  day: string;
-  isActive?: boolean;
-  onPress: () => void;
-}
-
-interface Task {
-  title: string;
-  time: string;
-  icon: string;
-}
-
-interface Event {
-  title: string;
-  date: Date;
-  avatars: string[];
-  startTime: string;
-  endTime: string;
-  color?: string;
-}
-
-interface User {
-  username?: string;
-}
-
-// Danh sách công việc (tasks)
-const tasks: Task[] = [
-  {
-    title: 'Làm căn cước công dân tại UBND phường',
-    time: '08:00 - 10:00',
-    icon: 'https://img.icons8.com/color/48/id-verified.png',
-  },
-  {
-    title: 'Nộp hồ sơ xin việc tại công ty ABC',
-    time: '14:00 - 16:00',
-    icon: 'https://img.icons8.com/color/48/briefcase.png',
-  },
-];
-// Danh sách sự kiện (events)
-const events: Event[] = [
-  {
-    title: 'Họp với anh Nam (Trưởng phòng)',
-    date: new Date(2025, 8, 17),
-    avatars: [
-      'https://randomuser.me/api/portraits/men/32.jpg',
-      'https://randomuser.me/api/portraits/women/44.jpg',
-    ],
-    startTime: '09:00',
-    endTime: '10:00',
-    color: '#34C759',
-  },
-  {
-    title: 'Thi thử chứng chỉ tiếng Anh',
-    date: new Date(2025, 8, 17),
-    avatars: [
-      'https://randomuser.me/api/portraits/men/21.jpg',
-      'https://randomuser.me/api/portraits/women/52.jpg',
-    ],
-    startTime: '13:30',
-    endTime: '15:00',
-    color: '#FF3B30',
-  },
-  {
-    title: 'Họp nhóm dự án Study Planner',
-    date: new Date(2025, 8, 18),
-    avatars: ['https://randomuser.me/api/portraits/men/18.jpg'],
-    startTime: '19:00',
-    endTime: '20:30',
-    color: '#007AFF',
-  },
-];
-
-// Colors
 const colors = {
-  pinkPrimary: '#EC4899',
-  slateDark: '#1E293B',
-  slateLight: '#64748B',
-  slateMedium: '#475569',
-  pinkBg: '#F472B6',
-  purplePrimary: '#A855F7',
-  pinkLight: '#FBCFE8',
-  blue400: '#60A5FA',
-  purple400: '#A78BFA',
-  white: '#FFFFFF',
-  calendarBg: '#F1F5F9',
-  border: '#E5E7EB',
+  pinkPrimary: "#EC4899",
+  slateDark: "#1E293B",
+  slateLight: "#64748B",
+  slateMedium: "#475569",
+  pinkBg: "#F472B6",
+  purplePrimary: "#A855F7",
+  pinkLight: "#FBCFE8",
+  blue400: "#60A5FA",
+  purple400: "#A78BFA",
+  white: "#FFFFFF",
 };
 
 // Generate dynamic dates for the current week
@@ -118,30 +59,28 @@ const generateWeekDates = (startDate: Date) => {
   return Array.from({ length: 7 }, (_, index) => {
     const date = addDays(startDate, index);
     return {
-      date: format(date, 'dd'),
-      day: format(date, 'EEE', { locale: vi }),
+      date: format(date, "dd"),
+      day: format(date, "EEE", { locale: vi }),
       fullDate: date,
       isActive: isToday(date),
     };
   });
 };
 
-// Chia khung giờ: 00:00 → 23:00
+// Generate 24 hours slots
 const generateTimeSlots = () => {
   const times: string[] = [];
   for (let i = 0; i < 24; i++) {
-    times.push(`${i.toString().padStart(2, '0')}:00`);
+    times.push(`${i.toString().padStart(2, "0")}:00`);
   }
   return times;
 };
 
-// Chuyển HH:mm → phút trong ngày
 const timeToMinutes = (time: string) => {
-  const [hours, minutes] = time.split(':').map(Number);
+  const [hours, minutes] = time.split(":").map(Number);
   return hours * 60 + minutes;
 };
 
-// Tính top và height của event block
 const getEventPositionAndHeight = (
   startTime: string,
   endTime: string,
@@ -157,22 +96,26 @@ const getEventPositionAndHeight = (
   return { top, height };
 };
 
-// DateItem Component
-const DateItem: React.FC<DateItemProps> = ({ date, day, isActive = false, onPress }) => {
+const DateItem: React.FC<{
+  date: string;
+  day: string;
+  isActive?: boolean;
+  onPress: () => void;
+}> = ({ date, day, isActive = false, onPress }) => {
   return (
     <TouchableOpacity
       onPress={onPress}
-      className={`items-center mr-4 w-16 rounded-xl p-2 ${isActive ? 'bg-pink-100' : ''
+      className={`items-center mr-4 w-16 rounded-xl p-2 ${isActive ? "bg-pink-100" : ""
         }`}
     >
       <Text
-        className={`text-lg font-semibold ${isActive ? 'text-pink-500 font-bold text-xl' : 'text-slate-800'
+        className={`text-lg font-semibold ${isActive ? "text-pink-500 font-bold text-xl" : "text-slate-800"
           }`}
       >
         {date}
       </Text>
       <Text
-        className={`text-sm ${isActive ? 'text-pink-500 font-medium' : 'text-slate-500'
+        className={`text-sm ${isActive ? "text-pink-500 font-medium" : "text-slate-500"
           }`}
       >
         {day}
@@ -180,32 +123,32 @@ const DateItem: React.FC<DateItemProps> = ({ date, day, isActive = false, onPres
     </TouchableOpacity>
   );
 };
-const FloatingButton: React.FC = () => {
-  return (
-    <TouchableOpacity
-      className="absolute bottom-6 right-6 bg-pink-500 w-16 h-16 rounded-full items-center justify-center shadow-lg"
-      activeOpacity={0.8}
-      onPress={() => {
-        console.log('Tạo lịch mới');
-      }}
-    >
-      <Icon name="add" size={32} color={colors.white} />
-    </TouchableOpacity>
-  );
-};
-// DateSection sửa điều kiện isActive
 
-// DateSection Component
-const DateSection: React.FC<{ selectedDate: Date; onDateSelect: (date: Date) => void }> = ({
-  selectedDate,
-  onDateSelect,
-}) => {
+import { Dimensions } from "react-native";
+
+const DateSection: React.FC<{
+  selectedDate: Date;
+  onDateSelect: (date: Date) => void;
+}> = ({ selectedDate, onDateSelect }) => {
   const [currentWeekStart, setCurrentWeekStart] = useState(
     startOfWeek(new Date(), { weekStartsOn: 1 })
   );
   const [isDatePickerVisible, setDatePickerVisible] = useState(false);
+  const scrollRef = React.useRef<ScrollView>(null);
 
   const dates = generateWeekDates(currentWeekStart);
+  const ITEM_WIDTH = 64; // w-16
+  const SCREEN_WIDTH = Dimensions.get("window").width;
+
+  useEffect(() => {
+    const index = dates.findIndex(
+      (d) => d.fullDate.toDateString() === selectedDate.toDateString()
+    );
+    if (index !== -1 && scrollRef.current) {
+      const scrollX = index * ITEM_WIDTH - SCREEN_WIDTH / 2 + ITEM_WIDTH / 2;
+      scrollRef.current.scrollTo({ x: Math.max(scrollX, 0), animated: true });
+    }
+  }, [selectedDate, dates]);
 
   const handlePrevWeek = () => {
     setCurrentWeekStart(subWeeks(currentWeekStart, 1));
@@ -223,25 +166,28 @@ const DateSection: React.FC<{ selectedDate: Date; onDateSelect: (date: Date) => 
 
   return (
     <View className="my-2">
-      {/* Header */}
       <View className="flex-row justify-between items-center mb-2">
         <TouchableOpacity onPress={handlePrevWeek}>
           <Icon name="chevron-back-outline" size={26} color={colors.slateMedium} />
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => setDatePickerVisible(true)}>
-          <Text className="text-lg font-semibold text-slate-800 uppercase width-[200px] text-center">
-            {format(currentWeekStart, 'MMMM yyyy', { locale: vi })}
+          <Text className="text-lg font-semibold text-slate-800 uppercase w-[200px] text-center">
+            {format(currentWeekStart, "MMMM yyyy", { locale: vi })}
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity onPress={handleNextWeek}>
-          <Icon name="chevron-forward-outline" size={26} color={colors.slateMedium} />
+          <Icon
+            name="chevron-forward-outline"
+            size={26}
+            color={colors.slateMedium}
+          />
         </TouchableOpacity>
       </View>
 
-      {/* ScrollView tuần */}
       <ScrollView
+        ref={scrollRef}
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ paddingVertical: 8 }}
@@ -254,11 +200,9 @@ const DateSection: React.FC<{ selectedDate: Date; onDateSelect: (date: Date) => 
             isActive={item.fullDate.toDateString() === selectedDate.toDateString()}
             onPress={() => onDateSelect(item.fullDate)}
           />
-
         ))}
       </ScrollView>
 
-      {/* DatePicker Modal */}
       <DateTimePickerModal
         isVisible={isDatePickerVisible}
         mode="date"
@@ -271,100 +215,113 @@ const DateSection: React.FC<{ selectedDate: Date; onDateSelect: (date: Date) => 
   );
 };
 
-// Header Component
-// Thay trong HomeScreen.tsx
 
-// Header Component
 const Header: React.FC<{ onOpenSidebar: () => void }> = ({ onOpenSidebar }) => {
   const auth = useSelector((state: RootState) => state.auth);
-  console.log(
-    "Avatar URL:",
-    `https://ui-avatars.com/api/?name=${encodeURIComponent(
-      auth.user?.username || "User"
-    )}&background=6366F1&color=fff`
-  );
 
   return (
     <View className="flex-row items-center justify-between mb-4">
-      {/* Logo + tên app */}
-
       <View className="flex-row items-center gap-2">
         <TouchableOpacity onPress={onOpenSidebar}>
           <Icon name="menu-outline" size={30} color={colors.slateDark} />
         </TouchableOpacity>
         <Image
-          source={require('../../assets/study_planner_logo.png')} // logo app
+          source={require("../../assets/study_planner_logo.png")}
           className="w-10 h-10"
         />
         <Text className="text-2xl font-bold text-slate-800">Study Planner</Text>
       </View>
 
-      {/* Nút menu + avatar */}
       <View className="flex-row items-center relative">
-
         <LinearGradient
           colors={[colors.blue400, colors.purple400, colors.pinkLight]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={{ width: 40, height: 40, borderRadius: 16, padding: 2 }} // 🔥 dùng style thay vì className cho kích thước cố định
+          style={{ width: 40, height: 40, borderRadius: 16, padding: 2 }}
         >
-          <View style={{ flex: 1, borderRadius: 16, overflow: 'hidden' }}>
+          <View style={{ flex: 1, borderRadius: 16, overflow: "hidden" }}>
             <Image
               source={{
                 uri: `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                  auth.user?.username || 'User'
+                  auth.user?.username || "User"
                 )}&background=6366F1&color=fff`,
               }}
-              style={{ width: '100%', height: '100%' }} // ✅ fill toàn bộ container
+              style={{ width: "100%", height: "100%" }}
               resizeMode="cover"
-              onError={(e) => console.log('Image load error:', e.nativeEvent.error)}
             />
           </View>
         </LinearGradient>
-
         <View className="absolute -top-1 -right-1 w-3 h-3 bg-pink-400 rounded-full" />
       </View>
     </View>
   );
 };
 
-// SetScheduleButton Component
-const SetScheduleButton: React.FC = () => {
-  return (
-    <LinearGradient
-      colors={[colors.pinkPrimary, colors.pinkBg]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 0 }}
-      className="rounded-full my-4"
-    >
-      <TouchableOpacity className="py-4 px-8">
-        <Text className="text-xl font-medium text-white text-center">Tạo lịch</Text>
-      </TouchableOpacity>
-    </LinearGradient>
-  );
-};
-
-// EventList Component
 const ScheduleSection: React.FC<{ selectedDate: Date }> = ({ selectedDate }) => {
+  const dispatch = useDispatch<AppDispatch>();
+  const { schedules, loading, error } = useSelector(
+    (state: RootState) => state.schedule
+  );
+  const auth = useSelector((state: RootState) => state.auth);
+
   const timeSlots = generateTimeSlots();
   const slotHeight = 60;
+  const TIMEZONE = "Asia/Ho_Chi_Minh";
 
-  const filteredEvents = events.filter((event) =>
-    isSameDay(event.date, selectedDate)
+  useEffect(() => {
+    if (auth.user?.username) {
+      dispatch(fetchSchedules(auth.user.username));
+    }
+  }, [dispatch, auth.user]);
+
+  useEffect(() => {
+    if (error) {
+      Alert.alert("Lỗi", error);
+    }
+  }, [error]);
+
+  const selectedDayOfWeek = getDay(selectedDate);
+  const parseDateTime = (value?: string) => {
+    if (!value) return null;
+
+    try {
+      const parsed = parse(value, "dd/MM/yyyy HH:mm:ss", new Date());
+      return isValid(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const handleRefresh = () => {
+    if (auth.user?.username) {
+      dispatch(fetchSchedules(auth.user.username));
+    }
+  };
+  const colors = ["#007AFF", "#34D399", "#F59E0B", "#EF4444", "#8B5CF6"];
+  const filteredEvents = schedules.filter(
+    (event) => (event.DayOfWeek || 0) === selectedDayOfWeek
   );
 
-  // Sắp xếp theo giờ bắt đầu
-  filteredEvents.sort((a, b) => a.startTime.localeCompare(b.startTime));
+  filteredEvents.sort((a, b) => {
+    const startA = parseDateTime(a.StartTime)?.getTime() ?? 0;
+    const startB = parseDateTime(b.StartTime)?.getTime() ?? 0;
+    return startA - startB;
+  });
 
   return (
     <View className="bg-white rounded-xl p-3">
       <Text className="text-lg font-semibold text-slate-800 mb-3">
-        Lịch cho {format(selectedDate, 'dd MMMM yyyy', { locale: vi })}
+        Lịch cho {format(selectedDate, "dd MMMM yyyy", { locale: vi })}
       </Text>
 
-      <ScrollView showsVerticalScrollIndicator={false} className="max-h-[45vh]">
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        className="max-h-[45vh]"
+        refreshControl={
+          <RefreshControl refreshing={loading} onRefresh={handleRefresh} />
+        }
+      >
         <View className="flex-row relative">
-          {/* Cột giờ */}
           <View className="w-16 mr-2">
             {timeSlots.map((time, index) => (
               <View key={index} style={{ height: slotHeight }}>
@@ -373,7 +330,6 @@ const ScheduleSection: React.FC<{ selectedDate: Date }> = ({ selectedDate }) => 
             ))}
           </View>
 
-          {/* Lưới timeline */}
           <View className="flex-1 border-l border-slate-200">
             {timeSlots.map((_, index) => (
               <View
@@ -384,12 +340,17 @@ const ScheduleSection: React.FC<{ selectedDate: Date }> = ({ selectedDate }) => 
             ))}
           </View>
 
-          {/* Events */}
           <View className="absolute left-16 right-0 top-0 bottom-0">
             {filteredEvents.map((event, index) => {
+              const start = parseDateTime(event.StartTime);
+              const end = parseDateTime(event.EndTime);
+
+              const startHHmm = start ? format(start, "HH:mm") : "00:00";
+              const endHHmm = end ? format(end, "HH:mm") : "00:00";
+
               const { top, height } = getEventPositionAndHeight(
-                event.startTime,
-                event.endTime,
+                startHHmm,
+                endHHmm,
                 slotHeight
               );
 
@@ -399,27 +360,25 @@ const ScheduleSection: React.FC<{ selectedDate: Date }> = ({ selectedDate }) => 
                   className="absolute rounded-lg p-2 shadow-md"
                   style={{
                     top,
-                    height: Math.max(height, 40),
+                    height: Math.max(height, 60),
                     left: 4,
                     right: 8,
-                    backgroundColor: event.color || '#007AFF',
+                    backgroundColor: colors[index % colors.length],
                   }}
                 >
-                  <Text className="text-sm font-semibold text-white" numberOfLines={1}>
-                    {event.title}
+                  <Text
+                    className="text-sm font-semibold text-white"
+                    numberOfLines={1}
+                  >
+                    {event.Subject || "Sự kiện"}
                   </Text>
                   <Text className="text-xs text-white/80 mb-1">
-                    {event.startTime} - {event.endTime}
+                    {start ? format(start, "HH:mm") : "??"} -{" "}
+                    {end ? format(end, "HH:mm") : "??"}
                   </Text>
-                  <View className="flex-row -space-x-1">
-                    {event.avatars.map((avatar, idx) => (
-                      <Image
-                        key={idx}
-                        source={{ uri: avatar }}
-                        className="w-4 h-4 rounded-full border border-white"
-                      />
-                    ))}
-                  </View>
+                  <Text className="text-xs text-white/90">
+                    {event.TeacherName || ""}
+                  </Text>
                 </View>
               );
             })}
@@ -430,128 +389,294 @@ const ScheduleSection: React.FC<{ selectedDate: Date }> = ({ selectedDate }) => 
   );
 };
 
-// Reminder Component
-const Reminder: React.FC = () => {
-  return (
-    <View className="my-4">
-      <Text className="text-lg font-semibold text-slate-800 mb-2">Nhắc nhở</Text>
-      <Text className="text-sm text-slate-600">Đừng quên lịch cho ngày mai nhé!</Text>
-    </View>
-  );
-};
-
-// TaskCard Component
-const TaskCard: React.FC<Task> = ({ title, time, icon }) => {
-  return (
-    <View className="bg-purple-500 rounded-xl p-3 flex-row items-center gap-3">
-      <View className="w-12 h-12 flex-shrink-0">
-        <Image source={{ uri: icon }} className="w-full h-full" resizeMode="contain" />
-      </View>
-      <View className="flex-1">
-        <Text className="text-sm text-white mb-1">{title}</Text>
-        <View className="flex-row items-center gap-2">
-          <Image
-            source={{ uri: 'https://img.icons8.com/color/48/calendar--v1.png' }}
-            className="w-4 h-4"
-          />
-          <Text className="text-sm text-white">{time}</Text>
-        </View>
-      </View>
-    </View>
-  );
-};
-
-// TaskCards Component
-const TaskCards: React.FC = () => {
-  return (
-    <View className="gap-3 my-4">
-      {tasks.map((task, index) => (
-        <TaskCard key={index} title={task.title} time={task.time} icon={task.icon} />
-      ))}
-    </View>
-  );
-};
-
-// HomeScreen Component
 const HomeScreen: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const [sidebarVisible, setSidebarVisible] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const navigation = useNavigation<AuthNav>();
+  const [isCreateModalVisible, setCreateModalVisible] = useState(false);
+
+  const auth = useSelector((state: RootState) => state.auth);
+  const teacherClassState = useSelector((state: RootState) => state.teacherClass);
+  const { teachers: availableTeachers = [], loading: teachersLoading = false } =
+    teacherClassState || {};
+
+  const [subject, setSubject] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+  const [selectedTeacher, setSelectedTeacher] =
+    useState<TeacherClassResponseDTO | null>(null);
+  const [teacherDropdownOpen, setTeacherDropdownOpen] = useState(false);
+  const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(
+    null
+  );
+  const [teacherItems, setTeacherItems] = useState<
+    { label: string; value: string }[]
+  >([]);
+  const [isStartTimePickerVisible, setStartTimePickerVisible] = useState(false);
+  const [isEndTimePickerVisible, setEndTimePickerVisible] = useState(false);
+
+  const classId = auth.user?.classId || "";
+  const TIMEZONE = "Asia/Ho_Chi_Minh";
+
+  useEffect(() => {
+    if (classId && !teachersLoading) {
+      dispatch(fetchTeachersByClassId(classId));
+    }
+  }, [dispatch, classId]);
+
+  useEffect(() => {
+    if (availableTeachers.length > 0) {
+      setTeacherItems(
+        availableTeachers.map((t) => ({
+          label: t.TeacherName,
+          value: t.TeacherId,
+        }))
+      );
+    }
+  }, [availableTeachers]);
+
+  useEffect(() => {
+    const teacher = availableTeachers.find(
+      (t) => t.TeacherId === selectedTeacherId
+    );
+    if (teacher) {
+      setSelectedTeacher(teacher);
+      setSubject(teacher.Subject || "");
+    }
+  }, [selectedTeacherId, availableTeachers]);
+
+  const handleCreate = () => {
+    if (!classId) {
+      Alert.alert("Lỗi", "Không có thông tin lớp học.");
+      return;
+    }
+    if (!subject || !selectedTeacher || !startTime || !endTime) {
+      Alert.alert("Lỗi", "Vui lòng điền đầy đủ thông tin.");
+      return;
+    }
+
+    const startToSend = startTime;
+    const endToSend = endTime;
+
+    dispatch(
+      createSchedule({
+        ScheduleId: 0,
+        StudentId: auth.user?.username || "",
+        ClassId: classId,
+        TeacherId: selectedTeacher.TeacherId,
+        Subject: subject,
+        DayOfWeek: getDay(new Date()),
+        StartTime: startToSend, // gửi dd/MM/yyyy HH:mm
+        EndTime: endToSend, // gửi dd/MM/yyyy HH:mm
+        StatusId: 1,
+        CreatedAt: format(new Date(), "dd/MM/yyyy HH:mm"),
+        UpdatedAt: format(new Date(), "dd/MM/yyyy HH:mm"),
+      } as any)
+    )
+      .then(() => {
+        if (auth.user?.username) {
+          dispatch(fetchSchedules(auth.user.username));
+        }
+      })
+      .catch(() => {
+        Alert.alert("Lỗi", "Không thể tạo lịch. Vui lòng thử lại.");
+      });
+
+    setCreateModalVisible(false);
+    setSubject("");
+    setSelectedTeacher(null);
+    setStartTime("");
+    setEndTime("");
+  };
+
   return (
     <SafeAreaView className="flex-1 bg-white">
       <View className="flex-1">
         <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
           <View className="p-4">
             <Header onOpenSidebar={() => setSidebarVisible(true)} />
-            <DateSection selectedDate={selectedDate} onDateSelect={setSelectedDate} />
+            <DateSection
+              selectedDate={selectedDate}
+              onDateSelect={setSelectedDate}
+            />
             <ScheduleSection selectedDate={selectedDate} />
-            <Reminder />
-            <TaskCards />
           </View>
         </ScrollView>
 
-        {/* Floating button */}
-        <FloatingButton />
+        <TouchableOpacity
+          className="absolute bottom-6 right-6 bg-pink-500 w-16 h-16 rounded-full items-center justify-center shadow-lg"
+          activeOpacity={0.8}
+          onPress={() => setCreateModalVisible(true)}
+        >
+          <Icon name="add" size={32} color="#FFF" />
+        </TouchableOpacity>
       </View>
 
-      {/* Sidebar Modal giữ nguyên */}
       <Modal
         isVisible={sidebarVisible}
         onBackdropPress={() => setSidebarVisible(false)}
-        style={{ margin: 0, justifyContent: 'flex-start', alignItems: 'flex-start' }}
         animationIn="slideInLeft"
         animationOut="slideOutLeft"
+        style={{ margin: 0 }} // full màn hình
       >
-        <SafeAreaView className="bg-white w-[70%] h-full">
-          {/* Header */}
-          <View className="flex-row items-center px-5 py-4 border-b border-slate-200">
-            <Image
-              source={require('../../assets/study_planner_logo.png')}
-              className="w-8 h-8 mr-2"
-            />
-            <Text className="text-xl font-bold text-slate-800">Study Planner</Text>
-          </View>
+        <View style={{ flex: 1, flexDirection: "row" }}>
+          {/* Sidebar */}
+          <SafeAreaView style={{ width: "70%", height: "100%", backgroundColor: "white" }}>
+            <View className="flex-row items-center px-5 py-4 border-b border-slate-200">
+              <Image
+                source={require("../../assets/study_planner_logo.png")}
+                className="w-8 h-8 mr-2"
+              />
+              <Text className="text-xl font-bold text-slate-800">Study Planner</Text>
+            </View>
 
-          {/* Menu items */}
-          <View className="flex-1 mt-4">
+            <View className="flex-1 mt-4">
+              <TouchableOpacity
+                className="flex-row items-center px-5 py-3 rounded-r-full active:bg-slate-100"
+                onPress={() => console.log("Hồ sơ")}
+              >
+                <Icon name="person-outline" size={24} color={colors.slateDark} />
+                <Text className="ml-4 text-base text-slate-800">Hồ sơ</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                className="flex-row items-center px-5 py-3 rounded-r-full active:bg-slate-100"
+                onPress={() => console.log("Cài đặt")}
+              >
+                <Icon name="settings-outline" size={24} color={colors.slateDark} />
+                <Text className="ml-4 text-base text-slate-800">Cài đặt</Text>
+              </TouchableOpacity>
+            </View>
+
             <TouchableOpacity
-              className="flex-row items-center px-5 py-3 rounded-r-full active:bg-slate-100"
-              onPress={() => console.log('Hồ sơ')}
+              className="flex-row items-center px-5 py-4 border-t border-slate-200"
+              onPress={() => {
+                dispatch(logout());
+                setSidebarVisible(false);
+                navigation.replace("Login");
+              }}
             >
-              <Icon name="person-outline" size={24} color={colors.slateDark} />
-              <Text className="ml-4 text-base text-slate-800">Hồ sơ</Text>
+              <Icon name="log-out-outline" size={24} color="#EA4335" />
+              <Text className="ml-4 text-base text-red-500 font-medium">Đăng xuất</Text>
             </TouchableOpacity>
+          </SafeAreaView>
 
-            <TouchableOpacity
-              className="flex-row items-center px-5 py-3 rounded-r-full active:bg-slate-100"
-              onPress={() => console.log('Cài đặt')}
-            >
-              <Icon name="settings-outline" size={24} color={colors.slateDark} />
-              <Text className="ml-4 text-base text-slate-800">Cài đặt</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Logout */}
-          <TouchableOpacity
-            className="flex-row items-center px-5 py-4 border-t border-slate-200"
-            onPress={() => {
-              dispatch(logout());
-              setSidebarVisible(false);
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'Login' }],
-              });
-            }}
-          >
-            <Icon name="log-out-outline" size={24} color="#EA4335" />
-            <Text className="ml-4 text-base text-red-500 font-medium">Đăng xuất</Text>
-          </TouchableOpacity>
-        </SafeAreaView>
+          {/* khoảng trống bên phải để bắt backdrop click */}
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => setSidebarVisible(false)} />
+        </View>
       </Modal>
 
 
+      {/* Create Modal */}
+      <Modal
+        isVisible={isCreateModalVisible}
+        onBackdropPress={() => setCreateModalVisible(false)}
+      >
+        <View className="bg-white rounded-2xl p-5">
+          <Text className="text-lg font-bold mb-4">Tạo lịch mới</Text>
+          <Text className="text-sm font-medium mb-1">Chọn giáo viên:</Text>
+          <DropDownPicker
+            open={teacherDropdownOpen}
+            value={selectedTeacherId}
+            items={teacherItems}
+            setOpen={setTeacherDropdownOpen}
+            setValue={setSelectedTeacherId}
+            setItems={setTeacherItems}
+            placeholder="Chọn giáo viên"
+            loading={teachersLoading}
+            style={{
+              borderColor: "#D1D5DB",
+              borderWidth: 1,
+              borderRadius: 8,
+              marginBottom: 12,
+              backgroundColor: "#FFFFFF",
+            }}
+            dropDownContainerStyle={{
+              borderColor: "#D1D5DB",
+              borderWidth: 1,
+              borderRadius: 8,
+            }}
+            textStyle={{
+              fontSize: 14,
+              color: "#1E293B",
+            }}
+          />
+          <Text className="text-sm font-medium mb-1">Môn học:</Text>
+          <TextInput
+            placeholder="Môn học"
+            value={subject}
+            onChangeText={setSubject}
+            className="border border-gray-300 rounded-lg px-3 py-2 mb-3 bg-white"
+          />
+
+          <Text className="text-sm font-medium mb-1">Mã lớp học:</Text>
+          <TextInput
+            value={classId}
+            editable={false}
+            className="border border-gray-300 rounded-lg px-3 py-2 mb-3 bg-gray-100"
+          />
+
+          <Text className="text-sm font-medium mb-1">Giờ bắt đầu:</Text>
+          <TouchableOpacity
+            onPress={() => setStartTimePickerVisible(true)}
+            className="border border-gray-300 rounded-lg px-3 py-2 mb-3 bg-white"
+          >
+            <Text className="text-base text-slate-800">
+              {startTime ? startTime : "Chọn ngày giờ bắt đầu"}
+            </Text>
+          </TouchableOpacity>
+
+          <Text className="text-sm font-medium mb-1">Giờ kết thúc:</Text>
+          <TouchableOpacity
+            onPress={() => setEndTimePickerVisible(true)}
+            className="border border-gray-300 rounded-lg px-3 py-2 mb-3 bg-white"
+          >
+            <Text className="text-base text-slate-800">
+              {endTime ? endTime : "Chọn ngày giờ kết thúc"}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={handleCreate}
+            className="bg-pink-500 p-3 rounded-xl mt-3"
+          >
+            <Text className="text-center text-white font-semibold">Lưu</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            className="mt-2"
+            onPress={() => setCreateModalVisible(false)}
+          >
+            <Text className="text-center text-slate-500">Hủy</Text>
+          </TouchableOpacity>
+        </View>
+
+        <DateTimePickerModal
+          isVisible={isStartTimePickerVisible}
+          mode="datetime"
+          onConfirm={(date) => {
+            // Save UI string in dd/MM/yyyy HH:mm
+            const uiString = formatInTimeZone(date, TIMEZONE, "dd/MM/yyyy HH:mm");
+            setStartTime(uiString);
+            setStartTimePickerVisible(false);
+          }}
+          onCancel={() => setStartTimePickerVisible(false)}
+        />
+
+        <DateTimePickerModal
+          isVisible={isEndTimePickerVisible}
+          mode="datetime"
+          onConfirm={(date) => {
+            const uiString = formatInTimeZone(date, TIMEZONE, "dd/MM/yyyy HH:mm");
+            setEndTime(uiString);
+            setEndTimePickerVisible(false);
+          }}
+          onCancel={() => setEndTimePickerVisible(false)}
+        />
+      </Modal>
     </SafeAreaView>
   );
 };
+
 export default HomeScreen;

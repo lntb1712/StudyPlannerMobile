@@ -1,5 +1,5 @@
 // src/screens/HomeScreen.tsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -34,7 +34,8 @@ import { vi } from "date-fns/locale";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/types";
-import { createSchedule, fetchSchedules } from "../store/slices/scheduleSlice";
+import { createSchedule, fetchSchedules, updateSchedule } from "../store/slices/scheduleSlice";
+import { ScheduleResponseDTO } from "../domain/entities/ScheduleDTO/ScheduleResponseDTO";
 import { fetchTeachersByClassId } from "../store/slices/teacherClassSlice";
 import { TeacherClassResponseDTO } from "../domain/entities/TeacherClassDTO/TeacherClassResponseDTO";
 import DropDownPicker from "react-native-dropdown-picker";
@@ -216,7 +217,7 @@ const DateSection: React.FC<{
 };
 
 
-const Header: React.FC<{ onOpenSidebar: () => void }> = ({ onOpenSidebar }) => {
+const Header: React.FC<{ onOpenSidebar: () => void; onReminderPress: () => void; onNotificationPress: () => void }> = ({ onOpenSidebar, onReminderPress, onNotificationPress }) => {
   const auth = useSelector((state: RootState) => state.auth);
 
   return (
@@ -232,7 +233,27 @@ const Header: React.FC<{ onOpenSidebar: () => void }> = ({ onOpenSidebar }) => {
         <Text className="text-2xl font-bold text-slate-800">Study Planner</Text>
       </View>
 
-      <View className="flex-row items-center relative">
+      <View className="flex-row items-center gap-3 relative">
+        {/* Reminder Icon */}
+        <TouchableOpacity
+          onPress={onReminderPress}
+          className="bg-pink-500 w-10 h-10 rounded-full items-center justify-center shadow-lg"
+          activeOpacity={0.8}
+        >
+          <Icon name="calendar-outline" size={20} color="#FFF" />
+        </TouchableOpacity>
+
+        {/* Notification Bell Icon */}
+        <TouchableOpacity
+          onPress={onNotificationPress}
+          className="relative"
+          activeOpacity={0.8}
+        >
+          <Icon name="notifications-outline" size={24} color={colors.slateDark} />
+          <View className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full" />
+        </TouchableOpacity>
+
+        {/* Avatar */}
         <LinearGradient
           colors={[colors.blue400, colors.purple400, colors.pinkLight]}
           start={{ x: 0, y: 0 }}
@@ -251,13 +272,15 @@ const Header: React.FC<{ onOpenSidebar: () => void }> = ({ onOpenSidebar }) => {
             />
           </View>
         </LinearGradient>
-        <View className="absolute -top-1 -right-1 w-3 h-3 bg-pink-400 rounded-full" />
       </View>
     </View>
   );
 };
 
-const ScheduleSection: React.FC<{ selectedDate: Date }> = ({ selectedDate }) => {
+const ScheduleSection: React.FC<{ 
+  selectedDate: Date; 
+  onEventPress: (event: ScheduleResponseDTO) => void;
+}> = ({ selectedDate, onEventPress }) => {
   const dispatch = useDispatch<AppDispatch>();
   const { schedules, loading, error } = useSelector(
     (state: RootState) => state.schedule
@@ -316,7 +339,7 @@ const ScheduleSection: React.FC<{ selectedDate: Date }> = ({ selectedDate }) => 
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        className="max-h-[45vh]"
+        className="max-h-[60vh]"
         refreshControl={
           <RefreshControl refreshing={loading} onRefresh={handleRefresh} />
         }
@@ -355,15 +378,25 @@ const ScheduleSection: React.FC<{ selectedDate: Date }> = ({ selectedDate }) => 
               );
 
               return (
-                <View
+                <TouchableOpacity
                   key={index}
-                  className="absolute rounded-lg p-2 shadow-md"
+                  activeOpacity={0.7}
+                  onPress={() => onEventPress(event)}
                   style={{
+                    position: "absolute",
                     top,
                     height: Math.max(height, 60),
                     left: 4,
                     right: 8,
                     backgroundColor: colors[index % colors.length],
+                    borderRadius: 8,
+                    padding: 8,
+                    shadowColor: "#000",
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.25,
+                    shadowRadius: 3.84,
+                    elevation: 5,
+                    zIndex: 1,
                   }}
                 >
                   <Text
@@ -379,7 +412,7 @@ const ScheduleSection: React.FC<{ selectedDate: Date }> = ({ selectedDate }) => 
                   <Text className="text-xs text-white/90">
                     {event.TeacherName || ""}
                   </Text>
-                </View>
+                </TouchableOpacity>
               );
             })}
           </View>
@@ -394,7 +427,9 @@ const HomeScreen: React.FC = () => {
   const [sidebarVisible, setSidebarVisible] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const navigation = useNavigation<AuthNav>();
-  const [isCreateModalVisible, setCreateModalVisible] = useState(false);
+  const [isModalVisible, setModalVisible] = useState(false);
+  const [mode, setMode] = useState<'create' | 'update' | null>(null);
+  const [selectedSchedule, setSelectedSchedule] = useState<ScheduleResponseDTO | null>(null);
 
   const auth = useSelector((state: RootState) => state.auth);
   const teacherClassState = useSelector((state: RootState) => state.teacherClass);
@@ -418,6 +453,25 @@ const HomeScreen: React.FC = () => {
 
   const classId = auth.user?.classId || "";
   const TIMEZONE = "Asia/Ho_Chi_Minh";
+  const clearForm = useCallback(() => {
+    setSubject("");
+    setStartTime("");
+    setEndTime("");
+    setSelectedTeacher(null);
+    setSelectedTeacherId(null);
+  }, []);
+
+const handleReminderPress = useCallback(() => {
+    clearForm();
+    setMode('create');
+    setSelectedSchedule(null);
+    setModalVisible(true);
+  }, [clearForm]);
+
+  const handleNotificationPress = useCallback(() => {
+    // TODO: Implement notification logic
+    Alert.alert("Thông báo", "Chức năng thông báo sẽ được thêm sau.");
+  }, []);
 
   useEffect(() => {
     if (classId && !teachersLoading) {
@@ -442,11 +496,45 @@ const HomeScreen: React.FC = () => {
     );
     if (teacher) {
       setSelectedTeacher(teacher);
-      setSubject(teacher.Subject || "");
+      if (!subject) {
+        setSubject(teacher.Subject || "");
+      }
     }
-  }, [selectedTeacherId, availableTeachers]);
+  }, [selectedTeacherId, availableTeachers, subject]);
 
-  const handleCreate = () => {
+  const handleEventPress = useCallback((event: ScheduleResponseDTO) => {
+    setSelectedSchedule(event);
+    const parseDateTime = (value?: string) => {
+      if (!value) return null;
+      try {
+        const parsed = parse(value, "dd/MM/yyyy HH:mm:ss", new Date());
+        return isValid(parsed) ? parsed : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const start = parseDateTime(event.StartTime);
+    if (start) {
+      const dateStr = format(selectedDate, "dd/MM/yyyy");
+      const timeStr = format(start, "HH:mm");
+      setStartTime(`${dateStr} ${timeStr}`);
+    }
+
+    const end = parseDateTime(event.EndTime);
+    if (end) {
+      const dateStr = format(selectedDate, "dd/MM/yyyy");
+      const timeStr = format(end, "HH:mm");
+      setEndTime(`${dateStr} ${timeStr}`);
+    }
+
+    setSubject(event.Subject || "");
+    setSelectedTeacherId(event.TeacherId || null);
+    setMode('update');
+    setModalVisible(true);
+  }, [selectedDate]);
+
+  const handleSubmit = useCallback(() => {
     if (!classId) {
       Alert.alert("Lỗi", "Không có thông tin lớp học.");
       return;
@@ -456,58 +544,81 @@ const HomeScreen: React.FC = () => {
       return;
     }
 
-    const startToSend = startTime;
-    const endToSend = endTime;
+    const startParsed = parse(startTime, "dd/MM/yyyy HH:mm:ss", new Date());
+    if (!isValid(startParsed)) {
+      Alert.alert("Lỗi", "Định dạng thời gian không hợp lệ.");
+      return;
+    }
 
-    dispatch(
-      createSchedule({
-        ScheduleId: 0,
-        StudentId: auth.user?.username || "",
-        ClassId: classId,
-        TeacherId: selectedTeacher.TeacherId,
-        Subject: subject,
-        DayOfWeek: getDay(new Date()),
-        StartTime: startToSend, // gửi dd/MM/yyyy HH:mm
-        EndTime: endToSend, // gửi dd/MM/yyyy HH:mm
-        StatusId: 1,
-        CreatedAt: format(new Date(), "dd/MM/yyyy HH:mm"),
-        UpdatedAt: format(new Date(), "dd/MM/yyyy HH:mm"),
-      } as any)
-    )
+    const dayOfWeek = getDay(startParsed);
+
+    const payload = {
+      ScheduleId: mode === 'update' ? selectedSchedule!.ScheduleId : 0,
+      StudentId: auth.user?.username || "",
+      ClassId: classId,
+      TeacherId: selectedTeacher.TeacherId,
+      Subject: subject,
+      DayOfWeek: dayOfWeek,
+      StartTime: startTime,
+      EndTime: endTime,
+      StatusId: 1,
+      CreatedAt: mode === 'create' ? format(new Date(), "dd/MM/yyyy HH:mm:ss") : selectedSchedule!.CreatedAt,
+      UpdatedAt: format(new Date(), "dd/MM/yyyy HH:mm:ss"),
+    };
+
+    let promise;
+    if (mode === 'create') {
+      promise = dispatch(createSchedule(payload));
+    } else {
+      promise = dispatch(updateSchedule({ 
+        scheduleId: selectedSchedule!.ScheduleId, 
+        payload 
+      }));
+    }
+
+    promise.unwrap()
       .then(() => {
         if (auth.user?.username) {
           dispatch(fetchSchedules(auth.user.username));
         }
+        setModalVisible(false);
+        clearForm();
       })
-      .catch(() => {
-        Alert.alert("Lỗi", "Không thể tạo lịch. Vui lòng thử lại.");
+      .catch((err: any) => {
+        Alert.alert("Lỗi", err || "Thao tác thất bại. Vui lòng thử lại.");
       });
-
-    setCreateModalVisible(false);
-    setSubject("");
-    setSelectedTeacher(null);
-    setStartTime("");
-    setEndTime("");
-  };
+  }, [dispatch, mode, selectedSchedule, auth.user, classId, subject, selectedTeacher, startTime, endTime, clearForm]);
 
   return (
     <SafeAreaView className="flex-1 bg-white">
       <View className="flex-1">
         <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
           <View className="p-4">
-            <Header onOpenSidebar={() => setSidebarVisible(true)} />
+            <Header 
+              onOpenSidebar={() => setSidebarVisible(true)} 
+              onReminderPress={handleReminderPress}
+              onNotificationPress={handleNotificationPress}
+            />
             <DateSection
               selectedDate={selectedDate}
               onDateSelect={setSelectedDate}
             />
-            <ScheduleSection selectedDate={selectedDate} />
+            <ScheduleSection 
+              selectedDate={selectedDate} 
+              onEventPress={handleEventPress}
+            />
           </View>
         </ScrollView>
 
         <TouchableOpacity
           className="absolute bottom-6 right-6 bg-pink-500 w-16 h-16 rounded-full items-center justify-center shadow-lg"
           activeOpacity={0.8}
-          onPress={() => setCreateModalVisible(true)}
+          onPress={() => {
+            clearForm();
+            setMode('create');
+            setSelectedSchedule(null);
+            setModalVisible(true);
+          }}
         >
           <Icon name="add" size={32} color="#FFF" />
         </TouchableOpacity>
@@ -551,11 +662,16 @@ const HomeScreen: React.FC = () => {
 
             <TouchableOpacity
               className="flex-row items-center px-5 py-4 border-t border-slate-200"
-              onPress={() => {
-                dispatch(logout());
-                setSidebarVisible(false);
-                navigation.replace("Login");
+              onPress={async () => {
+                try {
+                  await dispatch(logout()).unwrap(); // chờ logout xong
+                  setSidebarVisible(false);
+                  navigation.replace("Login");
+                } catch (err) {
+                  console.error("Logout failed:", err);
+                }
               }}
+
             >
               <Icon name="log-out-outline" size={24} color="#EA4335" />
               <Text className="ml-4 text-base text-red-500 font-medium">Đăng xuất</Text>
@@ -568,13 +684,18 @@ const HomeScreen: React.FC = () => {
       </Modal>
 
 
-      {/* Create Modal */}
+      {/* Modal for Create/Update */}
       <Modal
-        isVisible={isCreateModalVisible}
-        onBackdropPress={() => setCreateModalVisible(false)}
+        isVisible={isModalVisible}
+        onBackdropPress={() => {
+          setModalVisible(false);
+          clearForm();
+        }}
       >
         <View className="bg-white rounded-2xl p-5">
-          <Text className="text-lg font-bold mb-4">Tạo lịch mới</Text>
+          <Text className="text-lg font-bold mb-4">
+            {mode === 'create' ? 'Tạo lịch mới' : 'Cập nhật lịch'}
+          </Text>
           <Text className="text-sm font-medium mb-1">Chọn giáo viên:</Text>
           <DropDownPicker
             open={teacherDropdownOpen}
@@ -638,15 +759,20 @@ const HomeScreen: React.FC = () => {
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={handleCreate}
+            onPress={handleSubmit}
             className="bg-pink-500 p-3 rounded-xl mt-3"
           >
-            <Text className="text-center text-white font-semibold">Lưu</Text>
+            <Text className="text-center text-white font-semibold">
+              {mode === 'create' ? 'Tạo' : 'Cập nhật'}
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             className="mt-2"
-            onPress={() => setCreateModalVisible(false)}
+            onPress={() => {
+              setModalVisible(false);
+              clearForm();
+            }}
           >
             <Text className="text-center text-slate-500">Hủy</Text>
           </TouchableOpacity>
@@ -656,8 +782,8 @@ const HomeScreen: React.FC = () => {
           isVisible={isStartTimePickerVisible}
           mode="datetime"
           onConfirm={(date) => {
-            // Save UI string in dd/MM/yyyy HH:mm
-            const uiString = formatInTimeZone(date, TIMEZONE, "dd/MM/yyyy HH:mm");
+            // Save UI string in dd/MM/yyyy HH:mm:ss
+            const uiString = formatInTimeZone(date, TIMEZONE, "dd/MM/yyyy HH:mm:ss");
             setStartTime(uiString);
             setStartTimePickerVisible(false);
           }}
@@ -668,7 +794,7 @@ const HomeScreen: React.FC = () => {
           isVisible={isEndTimePickerVisible}
           mode="datetime"
           onConfirm={(date) => {
-            const uiString = formatInTimeZone(date, TIMEZONE, "dd/MM/yyyy HH:mm");
+            const uiString = formatInTimeZone(date, TIMEZONE, "dd/MM/yyyy HH:mm:ss");
             setEndTime(uiString);
             setEndTimePickerVisible(false);
           }}

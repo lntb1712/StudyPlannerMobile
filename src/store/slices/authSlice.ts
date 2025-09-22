@@ -1,3 +1,4 @@
+// Updated authSlice with new thunks for parent registration
 import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import { http } from "../../api/http";
 import { LoginRequestDTO } from "../../domain/entities/LoginDTO/LoginRequestDTO";
@@ -5,6 +6,9 @@ import { LoginResponseDTO } from "../../domain/entities/LoginDTO/LoginResponseDT
 import { ApiResponse } from "../../domain/value-objects/ApiResponse";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AccountManagementResponseDTO } from "../../domain/entities/AccountManagementDTO/AccountManagementResponseDTO";
+import { SendOTPRequestDTO } from "../../domain/entities/OTP/SendOTPRequestDTO";
+import { VerifyOTPRequestDTO } from "../../domain/entities/OTP/VerifyOTPRequestDTO";
+import { RegisterParentRequestDTO } from "../../domain/entities/RegisterDTO/RegisterParentRequestDTO";
 
 // Unused imports removed: ca, da from date-fns/locale
 interface AuthState {
@@ -12,7 +16,6 @@ interface AuthState {
   loading: boolean;
   error: string | null;
 }
-
 
 const initialState: AuthState = {
   user: null,
@@ -94,6 +97,69 @@ export const getUserInformation = createAsyncThunk(
   }
 );
 
+// 🟢 Send OTP for parent registration
+export const sendOTP = createAsyncThunk(
+  "auth/sendOTP",
+  async (payload: SendOTPRequestDTO, { rejectWithValue }) => {
+    try {
+      const rawResponse = await http.post("/Login/SendOTP", payload);
+      const apiResponse = ApiResponse.fromJson<boolean>(
+        rawResponse,
+        (data) => data
+      );
+
+      if (!apiResponse.isSuccess()) {
+        return rejectWithValue(apiResponse.message || "Gửi mã OTP thất bại");
+      }
+      return true;
+    } catch (error: any) {
+      return rejectWithValue(error.message || "Lỗi không xác định");
+    }
+  }
+);
+
+// 🟢 Verify OTP
+export const verifyOTP = createAsyncThunk(
+  "auth/verifyOTP",
+  async (payload: VerifyOTPRequestDTO, { rejectWithValue }) => {
+    try {
+      const rawResponse = await http.post("/Login/VerifyOTP", payload);
+      const apiResponse = ApiResponse.fromJson<boolean>(
+        rawResponse,
+        (data) => data
+      );
+
+      if (!apiResponse.isSuccess()) {
+        return rejectWithValue(apiResponse.message || "Xác thực OTP thất bại");
+      }
+      return true;
+    } catch (error: any) {
+      return rejectWithValue(error.message || "Lỗi không xác định");
+    }
+  }
+);
+
+// 🟢 Register Parent Account
+export const registerParent = createAsyncThunk(
+  "auth/registerParent",
+  async (payload: RegisterParentRequestDTO, { rejectWithValue }) => {
+    try {
+      const rawResponse = await http.post("/Login/CreateParentAccount", payload);
+      const apiResponse = ApiResponse.fromJson<boolean>(
+        rawResponse,
+        (data) => data
+      );
+
+      if (!apiResponse.isSuccess()) {
+        return rejectWithValue(apiResponse.message || "Tạo tài khoản thất bại");
+      }
+      return true;
+    } catch (error: any) {
+      return rejectWithValue(error.message || "Lỗi không xác định");
+    }
+  }
+);
+
 // 🟢 Logout
 export const logout = createAsyncThunk("auth/logout", async () => {
   await AsyncStorage.removeItem("token");
@@ -112,14 +178,13 @@ const authSlice = createSlice({
         state.loading = true;
         state.error = null;
       })
-    .addCase(
+      .addCase(
         login.fulfilled,
         (state, action: PayloadAction<{ username: string; groupId: string; token: string; classId?: string }>) => {
           state.loading = false;
           state.user = action.payload;
         }
       )
-
       .addCase(login.rejected, (state, action: any) => {
         state.loading = false;
         state.error = action.payload || "Đăng nhập thất bại";
@@ -143,10 +208,47 @@ const authSlice = createSlice({
         state.loading = false;
         state.error = action.payload || "Lỗi lấy thông tin người dùng";
       })
+      // SendOTP cases
+      .addCase(sendOTP.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(sendOTP.fulfilled, (state) => {
+        state.loading = false;
+      })
+      .addCase(sendOTP.rejected, (state, action: any) => {
+        state.loading = false;
+        state.error = action.payload || "Gửi OTP thất bại";
+      })
+      // VerifyOTP cases
+      .addCase(verifyOTP.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(verifyOTP.fulfilled, (state) => {
+        state.loading = false;
+      })
+      .addCase(verifyOTP.rejected, (state, action: any) => {
+        state.loading = false;
+        state.error = action.payload || "Xác thực OTP thất bại";
+      })
+      // RegisterParent cases
+      .addCase(registerParent.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(registerParent.fulfilled, (state) => {
+        state.loading = false;
+      })
+      .addCase(registerParent.rejected, (state, action: any) => {
+        state.loading = false;
+        state.error = action.payload || "Tạo tài khoản thất bại";
+      })
       // Logout
       .addCase(logout.fulfilled, (state) => {
         state.user = null;
         state.error = null;
+        state.loading = false;   // thêm dòng này để chắc chắn UI không treo loading
       });
   },
 });

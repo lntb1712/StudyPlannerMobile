@@ -5,7 +5,7 @@ module.exports = function (api) {
       ['babel-preset-expo', { jsxImportSource: 'nativewind' }],  // NativeWind config ở đây (không dùng plugins)
     ],
     plugins: [
-      'react-native-reanimated/plugin',  // Chỉ thêm nếu bạn dùng Reanimated; đặt cuối cùng nếu có nhiều plugins
+      'react-native-worklets/plugin', // 👈 plugin mới cho Reanimated >= 3.10
     ],
   };
 };

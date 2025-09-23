@@ -9,6 +9,7 @@ import { AccountManagementResponseDTO } from "../../domain/entities/AccountManag
 import { SendOTPRequestDTO } from "../../domain/entities/OTP/SendOTPRequestDTO";
 import { VerifyOTPRequestDTO } from "../../domain/entities/OTP/VerifyOTPRequestDTO";
 import { RegisterParentRequestDTO } from "../../domain/entities/RegisterDTO/RegisterParentRequestDTO";
+import { setToken } from "./permissionsSlice";
 
 // Unused imports removed: ca, da from date-fns/locale
 interface AuthState {
@@ -43,6 +44,7 @@ export const login = createAsyncThunk(
       // ✅ Lưu token bằng AsyncStorage
       if (dto.token) {
         await AsyncStorage.setItem("token", dto.token);
+         dispatch(setToken(dto.token));
       }
 
       // ✅ Fetch user information after successful auth

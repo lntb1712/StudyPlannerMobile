@@ -1,5 +1,5 @@
 // src/screens/HomeScreen.tsx
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
   RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch, useSelector, shallowEqual } from "react-redux";
 import { logout } from "../store/slices/authSlice";
 import { RootState, AppDispatch } from "../store";
 import Modal from "react-native-modal";
@@ -28,10 +28,10 @@ import {
   subWeeks,
   getDay,
 } from "date-fns";
-import { toZonedTime, formatInTimeZone } from "date-fns-tz";
+import { formatInTimeZone } from "date-fns-tz";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
 import { vi } from "date-fns/locale";
-import { useNavigation } from "@react-navigation/native";
+import { DrawerActions, useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/types";
 import { createSchedule, fetchSchedules, updateSchedule } from "../store/slices/scheduleSlice";
@@ -39,6 +39,20 @@ import { ScheduleResponseDTO } from "../domain/entities/ScheduleDTO/ScheduleResp
 import { fetchTeachersByClassId } from "../store/slices/teacherClassSlice";
 import { TeacherClassResponseDTO } from "../domain/entities/TeacherClassDTO/TeacherClassResponseDTO";
 import DropDownPicker from "react-native-dropdown-picker";
+import {
+  validateForm,
+  clearErrors,
+  selectValidationErrors,
+  selectIsFormValid,
+  selectIsSubmitting,
+  setSubmitting,
+} from "../store/slices/validationSlice";
+import {
+  makeSelectHasPermission,
+  selectIsAdmin,
+} from "../store/slices/permissionsSlice";
+
+import { Dimensions } from "react-native";
 
 type AuthNav = NativeStackNavigationProp<RootStackParamList, "Home">;
 
@@ -124,8 +138,6 @@ const DateItem: React.FC<{
     </TouchableOpacity>
   );
 };
-
-import { Dimensions } from "react-native";
 
 const DateSection: React.FC<{
   selectedDate: Date;
@@ -219,11 +231,11 @@ const DateSection: React.FC<{
 
 const Header: React.FC<{ onOpenSidebar: () => void; onReminderPress: () => void; onNotificationPress: () => void }> = ({ onOpenSidebar, onReminderPress, onNotificationPress }) => {
   const auth = useSelector((state: RootState) => state.auth);
-
+ const navigation = useNavigation();
   return (
     <View className="flex-row items-center justify-between mb-4">
       <View className="flex-row items-center gap-2">
-        <TouchableOpacity onPress={onOpenSidebar}>
+  <TouchableOpacity onPress={() => navigation.dispatch(DrawerActions.openDrawer())}>
           <Icon name="menu-outline" size={30} color={colors.slateDark} />
         </TouchableOpacity>
         <Image
@@ -277,8 +289,8 @@ const Header: React.FC<{ onOpenSidebar: () => void; onReminderPress: () => void;
   );
 };
 
-const ScheduleSection: React.FC<{ 
-  selectedDate: Date; 
+const ScheduleSection: React.FC<{
+  selectedDate: Date;
   onEventPress: (event: ScheduleResponseDTO) => void;
 }> = ({ selectedDate, onEventPress }) => {
   const dispatch = useDispatch<AppDispatch>();
@@ -453,20 +465,57 @@ const HomeScreen: React.FC = () => {
 
   const classId = auth.user?.classId || "";
   const TIMEZONE = "Asia/Ho_Chi_Minh";
+
+  // Permissions: Sử dụng multiple useSelector cho từng perm cụ thể (vì navItems fixed và ít)
+  const isAdmin = useSelector(selectIsAdmin);
+  const hasSchedulePermission = useSelector(makeSelectHasPermission('ucSchedule', false));
+  const hasAssignmentPermission = useSelector(makeSelectHasPermission('ucAssignment', false));
+  const canCreateOrUpdate = isAdmin || hasSchedulePermission;
+  const isReadonlyMode = !canCreateOrUpdate; // Nếu không có quyền full, thì readonly
+
+  // Validation
+  const errors = useSelector(selectValidationErrors, shallowEqual);
+  const isFormValid = useSelector(selectIsFormValid);
+  const isSubmitting = useSelector(selectIsSubmitting) as boolean;
+
+  // Sidebar nav items (similar to Vue)
+  const navItems = [
+    { name: "Hồ sơ", icon: "person-outline", route: "Profile" }, // No perm, always show
+    { name: "Cài đặt", icon: "settings-outline", route: "Settings" }, // No perm, always show
+    { name: "Quản lý bài tập", icon: "book-outline", route: "Assignment", perm: "ucAssignment" }
+  ];
+
+  // Filtered nav items based on permissions (sử dụng useMemo với deps perms)
+  const filteredNavItems = useMemo(() => {
+    return navItems.filter(item => {
+      if (!item.perm) return true; // Public items
+      // Check dựa trên selector value đã lấy từ useSelector
+      if (item.perm === 'ucAssignment') {
+        return isAdmin || hasAssignmentPermission;
+      }
+      return true; // Default cho các perm khác nếu cần mở rộng
+    });
+  }, [isAdmin, hasAssignmentPermission]);
+
   const clearForm = useCallback(() => {
     setSubject("");
     setStartTime("");
     setEndTime("");
     setSelectedTeacher(null);
     setSelectedTeacherId(null);
-  }, []);
+    dispatch(clearErrors());
+  }, [dispatch]);
 
-const handleReminderPress = useCallback(() => {
+  const handleReminderPress = useCallback(() => {
+    if (isReadonlyMode) {
+      Alert.alert("Không có quyền", "Bạn chỉ có quyền xem lịch trình.");
+      return;
+    }
     clearForm();
     setMode('create');
     setSelectedSchedule(null);
     setModalVisible(true);
-  }, [clearForm]);
+  }, [clearForm, isReadonlyMode]);
 
   const handleNotificationPress = useCallback(() => {
     // TODO: Implement notification logic
@@ -503,6 +552,10 @@ const handleReminderPress = useCallback(() => {
   }, [selectedTeacherId, availableTeachers, subject]);
 
   const handleEventPress = useCallback((event: ScheduleResponseDTO) => {
+    if (isReadonlyMode) {
+      Alert.alert("Không có quyền", "Bạn chỉ có quyền xem lịch trình.");
+      return;
+    }
     setSelectedSchedule(event);
     const parseDateTime = (value?: string) => {
       if (!value) return null;
@@ -518,29 +571,41 @@ const handleReminderPress = useCallback(() => {
     if (start) {
       const dateStr = format(selectedDate, "dd/MM/yyyy");
       const timeStr = format(start, "HH:mm");
-      setStartTime(`${dateStr} ${timeStr}`);
+      setStartTime(`${dateStr} ${timeStr}:00`); // Add seconds for format
     }
 
     const end = parseDateTime(event.EndTime);
     if (end) {
       const dateStr = format(selectedDate, "dd/MM/yyyy");
       const timeStr = format(end, "HH:mm");
-      setEndTime(`${dateStr} ${timeStr}`);
+      setEndTime(`${dateStr} ${timeStr}:00`);
     }
 
     setSubject(event.Subject || "");
     setSelectedTeacherId(event.TeacherId || null);
     setMode('update');
     setModalVisible(true);
-  }, [selectedDate]);
+    dispatch(clearErrors());
+  }, [selectedDate, isReadonlyMode, dispatch]);
 
   const handleSubmit = useCallback(() => {
-    if (!classId) {
-      Alert.alert("Lỗi", "Không có thông tin lớp học.");
+    if (isReadonlyMode) {
+      Alert.alert("Không có quyền", "Bạn không có quyền thực hiện thao tác này.");
       return;
     }
-    if (!subject || !selectedTeacher || !startTime || !endTime) {
-      Alert.alert("Lỗi", "Vui lòng điền đầy đủ thông tin.");
+
+    // Validate form using slice
+    dispatch(validateForm({
+      subject,
+      startTime,
+      endTime,
+      selectedTeacher: selectedTeacher?.TeacherId || null,
+      classId,
+    }));
+
+    if (!isFormValid) {
+      // Errors are already set in store, will be displayed
+      Alert.alert("Lỗi", "Vui lòng sửa các lỗi dưới đây.");
       return;
     }
 
@@ -556,7 +621,7 @@ const handleReminderPress = useCallback(() => {
       ScheduleId: mode === 'update' ? selectedSchedule!.ScheduleId : 0,
       StudentId: auth.user?.username || "",
       ClassId: classId,
-      TeacherId: selectedTeacher.TeacherId,
+      TeacherId: selectedTeacher!.TeacherId,
       Subject: subject,
       DayOfWeek: dayOfWeek,
       StartTime: startTime,
@@ -566,13 +631,15 @@ const handleReminderPress = useCallback(() => {
       UpdatedAt: format(new Date(), "dd/MM/yyyy HH:mm:ss"),
     };
 
+    dispatch(setSubmitting(true));
+
     let promise;
     if (mode === 'create') {
       promise = dispatch(createSchedule(payload));
     } else {
-      promise = dispatch(updateSchedule({ 
-        scheduleId: selectedSchedule!.ScheduleId, 
-        payload 
+      promise = dispatch(updateSchedule({
+        scheduleId: selectedSchedule!.ScheduleId,
+        payload
       }));
     }
 
@@ -586,16 +653,35 @@ const handleReminderPress = useCallback(() => {
       })
       .catch((err: any) => {
         Alert.alert("Lỗi", err || "Thao tác thất bại. Vui lòng thử lại.");
+      })
+      .finally(() => {
+        dispatch(setSubmitting(false));
       });
-  }, [dispatch, mode, selectedSchedule, auth.user, classId, subject, selectedTeacher, startTime, endTime, clearForm]);
+  }, [dispatch, mode, selectedSchedule, auth.user, classId, subject, selectedTeacher, startTime, endTime, clearForm, isReadonlyMode, isFormValid]);
+
+  // Disable nút FAB nếu không có quyền
+  const fabOnPress = useCallback(() => {
+    if (isReadonlyMode) {
+      Alert.alert("Không có quyền", "Bạn chỉ có quyền xem lịch trình.");
+      return;
+    }
+    clearForm();
+    setMode('create');
+    setSelectedSchedule(null);
+    setModalVisible(true);
+  }, [clearForm, isReadonlyMode]);
+
+  // Modal title and submit text
+  const modalTitle = mode === 'create' ? 'Tạo lịch mới' : 'Cập nhật lịch';
+  const submitText = mode === 'create' ? 'Tạo' : 'Cập nhật';
 
   return (
     <SafeAreaView className="flex-1 bg-white">
       <View className="flex-1">
         <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
           <View className="p-4">
-            <Header 
-              onOpenSidebar={() => setSidebarVisible(true)} 
+            <Header
+              onOpenSidebar={() => setSidebarVisible(true)}
               onReminderPress={handleReminderPress}
               onNotificationPress={handleNotificationPress}
             />
@@ -603,88 +689,28 @@ const handleReminderPress = useCallback(() => {
               selectedDate={selectedDate}
               onDateSelect={setSelectedDate}
             />
-            <ScheduleSection 
-              selectedDate={selectedDate} 
+            <ScheduleSection
+              selectedDate={selectedDate}
               onEventPress={handleEventPress}
             />
           </View>
         </ScrollView>
 
+        {/* FAB: Disable nếu không có quyền */}
         <TouchableOpacity
-          className="absolute bottom-6 right-6 bg-pink-500 w-16 h-16 rounded-full items-center justify-center shadow-lg"
+          className={`absolute bottom-6 right-6 w-16 h-16 rounded-full items-center justify-center shadow-lg ${canCreateOrUpdate ? 'bg-pink-500' : 'bg-gray-400'}`}
           activeOpacity={0.8}
-          onPress={() => {
-            clearForm();
-            setMode('create');
-            setSelectedSchedule(null);
-            setModalVisible(true);
-          }}
+          onPress={fabOnPress}
+          disabled={!canCreateOrUpdate}
         >
           <Icon name="add" size={32} color="#FFF" />
         </TouchableOpacity>
       </View>
 
-      <Modal
-        isVisible={sidebarVisible}
-        onBackdropPress={() => setSidebarVisible(false)}
-        animationIn="slideInLeft"
-        animationOut="slideOutLeft"
-        style={{ margin: 0 }} // full màn hình
-      >
-        <View style={{ flex: 1, flexDirection: "row" }}>
-          {/* Sidebar */}
-          <SafeAreaView style={{ width: "70%", height: "100%", backgroundColor: "white" }}>
-            <View className="flex-row items-center px-5 py-4 border-b border-slate-200">
-              <Image
-                source={require("../../assets/study_planner_logo.png")}
-                className="w-8 h-8 mr-2"
-              />
-              <Text className="text-xl font-bold text-slate-800">Study Planner</Text>
-            </View>
-
-            <View className="flex-1 mt-4">
-              <TouchableOpacity
-                className="flex-row items-center px-5 py-3 rounded-r-full active:bg-slate-100"
-                onPress={() => console.log("Hồ sơ")}
-              >
-                <Icon name="person-outline" size={24} color={colors.slateDark} />
-                <Text className="ml-4 text-base text-slate-800">Hồ sơ</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                className="flex-row items-center px-5 py-3 rounded-r-full active:bg-slate-100"
-                onPress={() => console.log("Cài đặt")}
-              >
-                <Icon name="settings-outline" size={24} color={colors.slateDark} />
-                <Text className="ml-4 text-base text-slate-800">Cài đặt</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity
-              className="flex-row items-center px-5 py-4 border-t border-slate-200"
-              onPress={async () => {
-                try {
-                  await dispatch(logout()).unwrap(); // chờ logout xong
-                  setSidebarVisible(false);
-                  navigation.replace("Login");
-                } catch (err) {
-                  console.error("Logout failed:", err);
-                }
-              }}
-
-            >
-              <Icon name="log-out-outline" size={24} color="#EA4335" />
-              <Text className="ml-4 text-base text-red-500 font-medium">Đăng xuất</Text>
-            </TouchableOpacity>
-          </SafeAreaView>
-
-          {/* khoảng trống bên phải để bắt backdrop click */}
-          <TouchableOpacity style={{ flex: 1 }} onPress={() => setSidebarVisible(false)} />
-        </View>
-      </Modal>
+      
 
 
-      {/* Modal for Create/Update */}
+      {/* Modal for Create/Update: Disable nếu readonly */}
       <Modal
         isVisible={isModalVisible}
         onBackdropPress={() => {
@@ -694,8 +720,9 @@ const handleReminderPress = useCallback(() => {
       >
         <View className="bg-white rounded-2xl p-5">
           <Text className="text-lg font-bold mb-4">
-            {mode === 'create' ? 'Tạo lịch mới' : 'Cập nhật lịch'}
+            {isReadonlyMode ? 'Xem lịch trình' : modalTitle}
           </Text>
+
           <Text className="text-sm font-medium mb-1">Chọn giáo viên:</Text>
           <DropDownPicker
             open={teacherDropdownOpen}
@@ -706,12 +733,13 @@ const handleReminderPress = useCallback(() => {
             setItems={setTeacherItems}
             placeholder="Chọn giáo viên"
             loading={teachersLoading}
+            disabled={isReadonlyMode}
             style={{
-              borderColor: "#D1D5DB",
+              borderColor: isReadonlyMode ? "#D1D5DB" : "#D1D5DB",
               borderWidth: 1,
               borderRadius: 8,
-              marginBottom: 12,
-              backgroundColor: "#FFFFFF",
+              marginBottom: 4,
+              backgroundColor: isReadonlyMode ? "#F9FAFB" : "#FFFFFF",
             }}
             dropDownContainerStyle={{
               borderColor: "#D1D5DB",
@@ -720,16 +748,22 @@ const handleReminderPress = useCallback(() => {
             }}
             textStyle={{
               fontSize: 14,
-              color: "#1E293B",
+              color: isReadonlyMode ? "#9CA3AF" : "#1E293B",
             }}
           />
+          {errors.selectedTeacher && (
+            <Text className="text-red-500 text-xs mb-2">{errors.selectedTeacher}</Text>
+          )}
+
           <Text className="text-sm font-medium mb-1">Môn học:</Text>
           <TextInput
             placeholder="Môn học"
             value={subject}
-            onChangeText={setSubject}
-            className="border border-gray-300 rounded-lg px-3 py-2 mb-3 bg-white"
+            onChangeText={!isReadonlyMode ? setSubject : undefined}
+            editable={!isReadonlyMode}
+            className={`border rounded-lg px-3 py-2 mb-2 ${isReadonlyMode ? 'bg-gray-100 border-gray-300' : 'bg-white border-gray-300'}`}
           />
+          {errors.subject && <Text className="text-red-500 text-xs mb-2">{errors.subject}</Text>}
 
           <Text className="text-sm font-medium mb-1">Mã lớp học:</Text>
           <TextInput
@@ -737,35 +771,43 @@ const handleReminderPress = useCallback(() => {
             editable={false}
             className="border border-gray-300 rounded-lg px-3 py-2 mb-3 bg-gray-100"
           />
+          {errors.general && <Text className="text-red-500 text-xs mb-2">{errors.general}</Text>}
 
           <Text className="text-sm font-medium mb-1">Giờ bắt đầu:</Text>
           <TouchableOpacity
-            onPress={() => setStartTimePickerVisible(true)}
-            className="border border-gray-300 rounded-lg px-3 py-2 mb-3 bg-white"
+            onPress={!isReadonlyMode ? () => setStartTimePickerVisible(true) : undefined}
+            disabled={isReadonlyMode}
+            className={`border rounded-lg px-3 py-2 mb-2 ${isReadonlyMode ? 'bg-gray-100 border-gray-300' : 'bg-white border-gray-300'}`}
           >
-            <Text className="text-base text-slate-800">
+            <Text className={`text-base ${isReadonlyMode ? 'text-slate-500' : 'text-slate-800'}`}>
               {startTime ? startTime : "Chọn ngày giờ bắt đầu"}
             </Text>
           </TouchableOpacity>
+          {errors.startTime && <Text className="text-red-500 text-xs mb-2">{errors.startTime}</Text>}
 
           <Text className="text-sm font-medium mb-1">Giờ kết thúc:</Text>
           <TouchableOpacity
-            onPress={() => setEndTimePickerVisible(true)}
-            className="border border-gray-300 rounded-lg px-3 py-2 mb-3 bg-white"
+            onPress={!isReadonlyMode ? () => setEndTimePickerVisible(true) : undefined}
+            disabled={isReadonlyMode}
+            className={`border rounded-lg px-3 py-2 mb-3 ${isReadonlyMode ? 'bg-gray-100 border-gray-300' : 'bg-white border-gray-300'}`}
           >
-            <Text className="text-base text-slate-800">
+            <Text className={`text-base ${isReadonlyMode ? 'text-slate-500' : 'text-slate-800'}`}>
               {endTime ? endTime : "Chọn ngày giờ kết thúc"}
             </Text>
           </TouchableOpacity>
+          {errors.endTime && <Text className="text-red-500 text-xs mb-2">{errors.endTime}</Text>}
 
-          <TouchableOpacity
-            onPress={handleSubmit}
-            className="bg-pink-500 p-3 rounded-xl mt-3"
-          >
-            <Text className="text-center text-white font-semibold">
-              {mode === 'create' ? 'Tạo' : 'Cập nhật'}
-            </Text>
-          </TouchableOpacity>
+          {!isReadonlyMode && (
+            <TouchableOpacity
+              onPress={handleSubmit}
+              className="bg-pink-500 p-3 rounded-xl mt-3"
+              disabled={isSubmitting}
+            >
+              <Text className="text-center text-white font-semibold">
+                {isSubmitting ? 'Đang xử lý...' : submitText}
+              </Text>
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             className="mt-2"
@@ -774,7 +816,9 @@ const handleReminderPress = useCallback(() => {
               clearForm();
             }}
           >
-            <Text className="text-center text-slate-500">Hủy</Text>
+            <Text className="text-center text-slate-500">
+              {isReadonlyMode ? 'Đóng' : 'Hủy'}
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -782,7 +826,6 @@ const handleReminderPress = useCallback(() => {
           isVisible={isStartTimePickerVisible}
           mode="datetime"
           onConfirm={(date) => {
-            // Save UI string in dd/MM/yyyy HH:mm:ss
             const uiString = formatInTimeZone(date, TIMEZONE, "dd/MM/yyyy HH:mm:ss");
             setStartTime(uiString);
             setStartTimePickerVisible(false);

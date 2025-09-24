@@ -44,6 +44,7 @@ export const login = createAsyncThunk(
       // ✅ Lưu token bằng AsyncStorage
       if (dto.token) {
         await AsyncStorage.setItem("token", dto.token);
+        await AsyncStorage.setItem("groupId", dto.groupId);
          dispatch(setToken(dto.token));
       }
 

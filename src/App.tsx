@@ -11,6 +11,7 @@ import HomeScreen from './screens/HomeScreen';
 import './styles/tailwind.css';
 
 import CustomSidebar from './components/CustomSidebar';
+import RemindersScreen from './screens/RemindersScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Drawer = createDrawerNavigator();
@@ -47,6 +48,7 @@ const App = () => {
             component={DrawerNavigator}
             options={{ headerShown: false }}
           />
+          <Stack.Screen name="Reminders" component={RemindersScreen} options={{ title: 'Nhắc nhở' }} />
         </Stack.Navigator>
       </NavigationContainer>
     </Provider>

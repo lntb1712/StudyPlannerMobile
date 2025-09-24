@@ -1,14 +1,16 @@
-// src/screens/HomeScreen.tsx
+// Cập nhật cho src/screens/HomeScreen.tsx
+// Thay đổi handleReminderPress để navigate đến RemindersScreen
+// (Giả sử đã thêm "Reminders": undefined vào RootStackParamList trong navigation/types.ts)
+// Và thêm <Stack.Screen name="Reminders" component={RemindersScreen} /> vào navigator.
+
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   ScrollView,
-  Image,
   TextInput,
   Alert,
-  RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useDispatch, useSelector, shallowEqual } from "react-redux";
@@ -16,25 +18,12 @@ import { logout } from "../store/slices/authSlice";
 import { RootState, AppDispatch } from "../store";
 import Modal from "react-native-modal";
 import Icon from "react-native-vector-icons/Ionicons";
-import { LinearGradient } from "expo-linear-gradient";
-import {
-  parse,
-  isValid,
-  format,
-  addDays,
-  isToday,
-  startOfWeek,
-  addWeeks,
-  subWeeks,
-  getDay,
-} from "date-fns";
-import { formatInTimeZone } from "date-fns-tz";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
+import { formatInTimeZone } from "date-fns-tz";
 import { vi } from "date-fns/locale";
-import { DrawerActions, useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/types";
-import { createSchedule, fetchSchedules, updateSchedule } from "../store/slices/scheduleSlice";
+import { createSchedule, updateSchedule, fetchSchedules } from "../store/slices/scheduleSlice";
 import { ScheduleResponseDTO } from "../domain/entities/ScheduleDTO/ScheduleResponseDTO";
 import { fetchTeachersByClassId } from "../store/slices/teacherClassSlice";
 import { TeacherClassResponseDTO } from "../domain/entities/TeacherClassDTO/TeacherClassResponseDTO";
@@ -52,393 +41,25 @@ import {
   selectIsAdmin,
 } from "../store/slices/permissionsSlice";
 
-import { Dimensions } from "react-native";
+import Header from "../components/Header";
+import DateSection from "../components/DateSection";
+import ScheduleSection from "../components/ScheduleSection";
+import { format, parse, getDay, isValid } from "date-fns";
+import { useNavigation } from "@react-navigation/native";  // Thêm import này
 
 type AuthNav = NativeStackNavigationProp<RootStackParamList, "Home">;
 
 const colors = {
   pinkPrimary: "#EC4899",
-  slateDark: "#1E293B",
-  slateLight: "#64748B",
-  slateMedium: "#475569",
   pinkBg: "#F472B6",
-  purplePrimary: "#A855F7",
-  pinkLight: "#FBCFE8",
-  blue400: "#60A5FA",
-  purple400: "#A78BFA",
   white: "#FFFFFF",
-};
-
-// Generate dynamic dates for the current week
-const generateWeekDates = (startDate: Date) => {
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = addDays(startDate, index);
-    return {
-      date: format(date, "dd"),
-      day: format(date, "EEE", { locale: vi }),
-      fullDate: date,
-      isActive: isToday(date),
-    };
-  });
-};
-
-// Generate 24 hours slots
-const generateTimeSlots = () => {
-  const times: string[] = [];
-  for (let i = 0; i < 24; i++) {
-    times.push(`${i.toString().padStart(2, "0")}:00`);
-  }
-  return times;
-};
-
-const timeToMinutes = (time: string) => {
-  const [hours, minutes] = time.split(":").map(Number);
-  return hours * 60 + minutes;
-};
-
-const getEventPositionAndHeight = (
-  startTime: string,
-  endTime: string,
-  slotHeight: number
-) => {
-  const startMinutes = timeToMinutes(startTime);
-  const endMinutes = timeToMinutes(endTime);
-  const duration = endMinutes - startMinutes;
-
-  const top = (startMinutes / 60) * slotHeight;
-  const height = (duration / 60) * slotHeight;
-
-  return { top, height };
-};
-
-const DateItem: React.FC<{
-  date: string;
-  day: string;
-  isActive?: boolean;
-  onPress: () => void;
-}> = ({ date, day, isActive = false, onPress }) => {
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      className={`items-center mr-4 w-16 rounded-xl p-2 ${isActive ? "bg-pink-100" : ""
-        }`}
-    >
-      <Text
-        className={`text-lg font-semibold ${isActive ? "text-pink-500 font-bold text-xl" : "text-slate-800"
-          }`}
-      >
-        {date}
-      </Text>
-      <Text
-        className={`text-sm ${isActive ? "text-pink-500 font-medium" : "text-slate-500"
-          }`}
-      >
-        {day}
-      </Text>
-    </TouchableOpacity>
-  );
-};
-
-const DateSection: React.FC<{
-  selectedDate: Date;
-  onDateSelect: (date: Date) => void;
-}> = ({ selectedDate, onDateSelect }) => {
-  const [currentWeekStart, setCurrentWeekStart] = useState(
-    startOfWeek(new Date(), { weekStartsOn: 1 })
-  );
-  const [isDatePickerVisible, setDatePickerVisible] = useState(false);
-  const scrollRef = React.useRef<ScrollView>(null);
-
-  const dates = generateWeekDates(currentWeekStart);
-  const ITEM_WIDTH = 64; // w-16
-  const SCREEN_WIDTH = Dimensions.get("window").width;
-
-  useEffect(() => {
-    const index = dates.findIndex(
-      (d) => d.fullDate.toDateString() === selectedDate.toDateString()
-    );
-    if (index !== -1 && scrollRef.current) {
-      const scrollX = index * ITEM_WIDTH - SCREEN_WIDTH / 2 + ITEM_WIDTH / 2;
-      scrollRef.current.scrollTo({ x: Math.max(scrollX, 0), animated: true });
-    }
-  }, [selectedDate, dates]);
-
-  const handlePrevWeek = () => {
-    setCurrentWeekStart(subWeeks(currentWeekStart, 1));
-  };
-
-  const handleNextWeek = () => {
-    setCurrentWeekStart(addWeeks(currentWeekStart, 1));
-  };
-
-  const handleConfirm = (date: Date) => {
-    setDatePickerVisible(false);
-    setCurrentWeekStart(startOfWeek(date, { weekStartsOn: 1 }));
-    onDateSelect(date);
-  };
-
-  return (
-    <View className="my-2">
-      <View className="flex-row justify-between items-center mb-2">
-        <TouchableOpacity onPress={handlePrevWeek}>
-          <Icon name="chevron-back-outline" size={26} color={colors.slateMedium} />
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={() => setDatePickerVisible(true)}>
-          <Text className="text-lg font-semibold text-slate-800 uppercase w-[200px] text-center">
-            {format(currentWeekStart, "MMMM yyyy", { locale: vi })}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={handleNextWeek}>
-          <Icon
-            name="chevron-forward-outline"
-            size={26}
-            color={colors.slateMedium}
-          />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView
-        ref={scrollRef}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingVertical: 8 }}
-      >
-        {dates.map((item, index) => (
-          <DateItem
-            key={index}
-            date={item.date}
-            day={item.day}
-            isActive={item.fullDate.toDateString() === selectedDate.toDateString()}
-            onPress={() => onDateSelect(item.fullDate)}
-          />
-        ))}
-      </ScrollView>
-
-      <DateTimePickerModal
-        isVisible={isDatePickerVisible}
-        mode="date"
-        onConfirm={handleConfirm}
-        onCancel={() => setDatePickerVisible(false)}
-        date={selectedDate}
-        locale="vi"
-      />
-    </View>
-  );
-};
-
-
-const Header: React.FC<{ onOpenSidebar: () => void; onReminderPress: () => void; onNotificationPress: () => void }> = ({ onOpenSidebar, onReminderPress, onNotificationPress }) => {
-  const auth = useSelector((state: RootState) => state.auth);
- const navigation = useNavigation();
-  return (
-    <View className="flex-row items-center justify-between mb-4">
-      <View className="flex-row items-center gap-2">
-  <TouchableOpacity onPress={() => navigation.dispatch(DrawerActions.openDrawer())}>
-          <Icon name="menu-outline" size={30} color={colors.slateDark} />
-        </TouchableOpacity>
-        <Image
-          source={require("../../assets/study_planner_logo.png")}
-          className="w-10 h-10"
-        />
-        <Text className="text-2xl font-bold text-slate-800">Study Planner</Text>
-      </View>
-
-      <View className="flex-row items-center gap-3 relative">
-        {/* Reminder Icon */}
-        <TouchableOpacity
-          onPress={onReminderPress}
-          className="bg-pink-500 w-10 h-10 rounded-full items-center justify-center shadow-lg"
-          activeOpacity={0.8}
-        >
-          <Icon name="calendar-outline" size={20} color="#FFF" />
-        </TouchableOpacity>
-
-        {/* Notification Bell Icon */}
-        <TouchableOpacity
-          onPress={onNotificationPress}
-          className="relative"
-          activeOpacity={0.8}
-        >
-          <Icon name="notifications-outline" size={24} color={colors.slateDark} />
-          <View className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full" />
-        </TouchableOpacity>
-
-        {/* Avatar */}
-        <LinearGradient
-          colors={[colors.blue400, colors.purple400, colors.pinkLight]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{ width: 40, height: 40, borderRadius: 16, padding: 2 }}
-        >
-          <View style={{ flex: 1, borderRadius: 16, overflow: "hidden" }}>
-            <Image
-              source={{
-                uri: `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                  auth.user?.username || "User"
-                )}&background=6366F1&color=fff`,
-              }}
-              style={{ width: "100%", height: "100%" }}
-              resizeMode="cover"
-            />
-          </View>
-        </LinearGradient>
-      </View>
-    </View>
-  );
-};
-
-const ScheduleSection: React.FC<{
-  selectedDate: Date;
-  onEventPress: (event: ScheduleResponseDTO) => void;
-}> = ({ selectedDate, onEventPress }) => {
-  const dispatch = useDispatch<AppDispatch>();
-  const { schedules, loading, error } = useSelector(
-    (state: RootState) => state.schedule
-  );
-  const auth = useSelector((state: RootState) => state.auth);
-
-  const timeSlots = generateTimeSlots();
-  const slotHeight = 60;
-  const TIMEZONE = "Asia/Ho_Chi_Minh";
-
-  useEffect(() => {
-    if (auth.user?.username) {
-      dispatch(fetchSchedules(auth.user.username));
-    }
-  }, [dispatch, auth.user]);
-
-  useEffect(() => {
-    if (error) {
-      Alert.alert("Lỗi", error);
-    }
-  }, [error]);
-
-  const selectedDayOfWeek = getDay(selectedDate);
-  const parseDateTime = (value?: string) => {
-    if (!value) return null;
-
-    try {
-      const parsed = parse(value, "dd/MM/yyyy HH:mm:ss", new Date());
-      return isValid(parsed) ? parsed : null;
-    } catch {
-      return null;
-    }
-  };
-
-  const handleRefresh = () => {
-    if (auth.user?.username) {
-      dispatch(fetchSchedules(auth.user.username));
-    }
-  };
-  const colors = ["#007AFF", "#34D399", "#F59E0B", "#EF4444", "#8B5CF6"];
-  const filteredEvents = schedules.filter(
-    (event) => (event.DayOfWeek || 0) === selectedDayOfWeek
-  );
-
-  filteredEvents.sort((a, b) => {
-    const startA = parseDateTime(a.StartTime)?.getTime() ?? 0;
-    const startB = parseDateTime(b.StartTime)?.getTime() ?? 0;
-    return startA - startB;
-  });
-
-  return (
-    <View className="bg-white rounded-xl p-3">
-      <Text className="text-lg font-semibold text-slate-800 mb-3">
-        Lịch cho {format(selectedDate, "dd MMMM yyyy", { locale: vi })}
-      </Text>
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        className="max-h-[60vh]"
-        refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={handleRefresh} />
-        }
-      >
-        <View className="flex-row relative">
-          <View className="w-16 mr-2">
-            {timeSlots.map((time, index) => (
-              <View key={index} style={{ height: slotHeight }}>
-                <Text className="text-sm text-slate-500">{time}</Text>
-              </View>
-            ))}
-          </View>
-
-          <View className="flex-1 border-l border-slate-200">
-            {timeSlots.map((_, index) => (
-              <View
-                key={index}
-                className="border-b border-slate-100"
-                style={{ height: slotHeight }}
-              />
-            ))}
-          </View>
-
-          <View className="absolute left-16 right-0 top-0 bottom-0">
-            {filteredEvents.map((event, index) => {
-              const start = parseDateTime(event.StartTime);
-              const end = parseDateTime(event.EndTime);
-
-              const startHHmm = start ? format(start, "HH:mm") : "00:00";
-              const endHHmm = end ? format(end, "HH:mm") : "00:00";
-
-              const { top, height } = getEventPositionAndHeight(
-                startHHmm,
-                endHHmm,
-                slotHeight
-              );
-
-              return (
-                <TouchableOpacity
-                  key={index}
-                  activeOpacity={0.7}
-                  onPress={() => onEventPress(event)}
-                  style={{
-                    position: "absolute",
-                    top,
-                    height: Math.max(height, 60),
-                    left: 4,
-                    right: 8,
-                    backgroundColor: colors[index % colors.length],
-                    borderRadius: 8,
-                    padding: 8,
-                    shadowColor: "#000",
-                    shadowOffset: { width: 0, height: 2 },
-                    shadowOpacity: 0.25,
-                    shadowRadius: 3.84,
-                    elevation: 5,
-                    zIndex: 1,
-                  }}
-                >
-                  <Text
-                    className="text-sm font-semibold text-white"
-                    numberOfLines={1}
-                  >
-                    {event.Subject || "Sự kiện"}
-                  </Text>
-                  <Text className="text-xs text-white/80 mb-1">
-                    {start ? format(start, "HH:mm") : "??"} -{" "}
-                    {end ? format(end, "HH:mm") : "??"}
-                  </Text>
-                  <Text className="text-xs text-white/90">
-                    {event.TeacherName || ""}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-      </ScrollView>
-    </View>
-  );
 };
 
 const HomeScreen: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
+  const navigation = useNavigation<AuthNav>();  // Thêm navigation hook
   const [sidebarVisible, setSidebarVisible] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const navigation = useNavigation<AuthNav>();
   const [isModalVisible, setModalVisible] = useState(false);
   const [mode, setMode] = useState<'create' | 'update' | null>(null);
   const [selectedSchedule, setSelectedSchedule] = useState<ScheduleResponseDTO | null>(null);
@@ -468,8 +89,8 @@ const HomeScreen: React.FC = () => {
 
   // Permissions: Sử dụng multiple useSelector cho từng perm cụ thể (vì navItems fixed và ít)
   const isAdmin = useSelector(selectIsAdmin);
-  const hasSchedulePermission = useSelector(makeSelectHasPermission('ucSchedule', false));
-  const hasAssignmentPermission = useSelector(makeSelectHasPermission('ucAssignment', false));
+  const hasSchedulePermission = useSelector(makeSelectHasPermission('ucSchedule'));
+  const hasAssignmentPermission = useSelector(makeSelectHasPermission('ucAssignment'));
   const canCreateOrUpdate = isAdmin || hasSchedulePermission;
   const isReadonlyMode = !canCreateOrUpdate; // Nếu không có quyền full, thì readonly
 
@@ -506,16 +127,10 @@ const HomeScreen: React.FC = () => {
     dispatch(clearErrors());
   }, [dispatch]);
 
+  // Cập nhật: Navigate đến RemindersScreen thay vì mở modal schedule
   const handleReminderPress = useCallback(() => {
-    if (isReadonlyMode) {
-      Alert.alert("Không có quyền", "Bạn chỉ có quyền xem lịch trình.");
-      return;
-    }
-    clearForm();
-    setMode('create');
-    setSelectedSchedule(null);
-    setModalVisible(true);
-  }, [clearForm, isReadonlyMode]);
+    navigation.navigate("Reminders");
+  }, [navigation]);
 
   const handleNotificationPress = useCallback(() => {
     // TODO: Implement notification logic
@@ -682,7 +297,7 @@ const HomeScreen: React.FC = () => {
           <View className="p-4">
             <Header
               onOpenSidebar={() => setSidebarVisible(true)}
-              onReminderPress={handleReminderPress}
+              onReminderPress={handleReminderPress}  // Đã cập nhật
               onNotificationPress={handleNotificationPress}
             />
             <DateSection
@@ -706,9 +321,6 @@ const HomeScreen: React.FC = () => {
           <Icon name="add" size={32} color="#FFF" />
         </TouchableOpacity>
       </View>
-
-      
-
 
       {/* Modal for Create/Update: Disable nếu readonly */}
       <Modal

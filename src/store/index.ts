@@ -4,6 +4,7 @@ import scheduleReducer from "./slices/scheduleSlice"; // ✅ thêm dòng này
 import teacherClassReducer from "./slices/teacherClassSlice"
 import validateReducer from "./slices/validationSlice"
 import permissionReducer from "./slices/permissionsSlice"
+import reminderReducer from "./slices/ReminderSlice"
 
 export const store = configureStore({
   reducer: {
@@ -11,7 +12,8 @@ export const store = configureStore({
     schedule: scheduleReducer, // ✅ add vào store
     teacherClass: teacherClassReducer,
     validateSlice: validateReducer,
-    permissionSlice: permissionReducer
+    permissionSlice: permissionReducer,
+    reminderSlice: reminderReducer
   },
 });
 

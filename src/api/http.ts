@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 
 export const http = axios.create({
-  baseURL: "https://c72d58b8ee63.ngrok-free.app/api", // <-- bạn có thể đổi thành import.meta.env.VITE_API_URL
+  baseURL: "https://studyplannerapi.onrender.com/api", // <-- bạn có thể đổi thành import.meta.env.VITE_API_URL
   headers: {
     "Content-Type": "application/json",
   },

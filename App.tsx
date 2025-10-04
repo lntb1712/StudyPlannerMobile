@@ -1,29 +1,27 @@
 import 'react-native-gesture-handler';
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import { Provider, useSelector, useDispatch } from 'react-redux';
-import { store, AppDispatch, RootState } from './store';
-import LoginScreen from './screens/LoginScreen';
-import ScheduleScreen from './screens/ScheduleScreen';
-import RemindersScreen from './screens/RemindersScreen';
-import AssignmentScreen from './screens/AssignmentScreen';
-import CustomSidebar from './components/CustomSidebar';
-import './styles/tailwind.css';
-
-import { Text, View, Animated, Easing, Image, Alert } from 'react-native';
+import { Animated, Easing, View, Text, Image, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { makeSelectPermission } from './store/slices/permissionsSlice';
-import NotificationScreen from './screens/NotificationScreen';
-import { setupNotificationHandler, registerForPushNotificationsAsync, listenForNotifications } from './store/services/NotificationService';
-import MessagingScreen from './screens/MessagingScreen';
-import MessagingListScreen from './screens/MessagingListScreen';
-
+import { AppDispatch, store } from './src/store';
+import { makeSelectPermission } from './src/store/slices/permissionsSlice';
+import { listenForNotifications, registerForPushNotificationsAsync, setupNotificationHandler } from './src/store/services/NotificationService';
+import MessagingScreen from './src/screens/MessagingScreen';
+import CustomSidebar from './src/components/CustomSidebar';
+import ScheduleScreen from './src/screens/ScheduleScreen';
+import AssignmentScreen from './src/screens/AssignmentScreen';
+import RemindersScreen from './src/screens/RemindersScreen';
+import MessagingListScreen from './src/screens/MessagingListScreen';
+import LoginScreen from './src/screens/LoginScreen';
+import NotificationScreen from './src/screens/NotificationScreen';
+import './src/styles/tailwind.css';
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
 
-// Splash Screen (unchanged)
+// Splash Screen with normal StyleSheet
 const SplashScreen: React.FC = () => {
   const [progress] = useState(new Animated.Value(0));
 
@@ -37,38 +35,73 @@ const SplashScreen: React.FC = () => {
   }, []);
 
   return (
-    <SafeAreaView className="flex-1 bg-white justify-center items-center">
-      <View className="items-center">
+    <SafeAreaView style={styles.container}>
+      <View style={styles.logoContainer}>
         <Image
-          source={require('../assets/study_planner_logo.png')}
-          style={{ width: 80, height: 80, borderRadius: 40, marginBottom: 12 }}
+          source={require('./assets/study_planner_logo.png')}
+          style={styles.logo}
           resizeMode="contain"
         />
-        <Text className="text-2xl font-bold text-gray-800 mb-8">StudyPlanner</Text>
+        <Text style={styles.title}>StudyPlanner</Text>
       </View>
-      <View className="w-64 h-2 bg-gray-300 rounded-full overflow-hidden">
+      <View style={styles.progressBackground}>
         <Animated.View
-          style={{
-            height: '100%',
-            backgroundColor: '#3B82F6',
-            borderRadius: 10,
-            width: progress.interpolate({
-              inputRange: [0, 1],
-              outputRange: ['0%', '100%'],
-            }),
-          }}
+          style={[
+            styles.progressBar,
+            {
+              width: progress.interpolate({
+                inputRange: [0, 1],
+                outputRange: ['0%', '100%'],
+              }),
+            },
+          ]}
         />
       </View>
     </SafeAreaView>
   );
 };
 
-// Wrapper for MessagingScreen (Fixed: No props; uses useRoute inside)
-const MessagingWrapper: React.FC = () => {
-  return <MessagingScreen />;
-};
+// Styles
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: 'white',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoContainer: {
+    alignItems: 'center',
+  },
+  logo: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    marginBottom: 12,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginBottom: 32,
+  },
+  progressBackground: {
+    width: 256,
+    height: 8,
+    backgroundColor: '#d1d5db',
+    borderRadius: 9999,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: '#3B82F6',
+    borderRadius: 10,
+  },
+});
 
-// Drawer (unchanged)
+// Wrapper for MessagingScreen
+const MessagingWrapper: React.FC = () => <MessagingScreen />;
+
+// Drawer Navigator
 const DrawerNavigator: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const schedulePerm = useSelector(makeSelectPermission('ucSchedule'));
@@ -97,40 +130,34 @@ const DrawerNavigator: React.FC = () => {
       {remindersPerm?.isenable && (
         <Drawer.Screen name="Reminders" component={RemindersScreen} options={{ title: 'Nhắc nhở' }} />
       )}
-      {/* Added: MessagingListScreen in Drawer for easy access */}
       <Drawer.Screen name="MessagingList" component={MessagingListScreen} options={{ title: 'Tin nhắn' }} />
     </Drawer.Navigator>
   );
 };
 
-// Main Stack (unchanged)
+// Main Stack Navigator
 const MainNavigator: React.FC = () => (
   <Stack.Navigator initialRouteName="Login">
     <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
-    <Stack.Screen 
-      name="Home" 
-      component={DrawerNavigator} 
-      options={{ headerShown: false }} 
-    />
+    <Stack.Screen name="Home" component={DrawerNavigator} options={{ headerShown: false }} />
     <Stack.Screen name="Schedule" component={ScheduleScreen} options={{ title: 'Lịch' }} />
     <Stack.Screen name="Reminders" component={RemindersScreen} options={{ title: 'Nhắc nhở' }} />
     <Stack.Screen name="Assignments" component={AssignmentScreen} options={{ title: 'Bài tập' }} />
     <Stack.Screen name="Notifications" component={NotificationScreen} options={{ title: 'Thông báo' }} />
-    {/* Direct Messaging screen for conversations - navigated from MessagingList */}
-    <Stack.Screen 
-      name="Messaging" 
-      component={MessagingWrapper} 
-      options={{ 
+    <Stack.Screen
+      name="Messaging"
+      component={MessagingWrapper}
+      options={{
         title: 'Trò chuyện',
         headerStyle: { backgroundColor: '#f8fafc' },
         headerTintColor: '#1e293b',
         headerTitleStyle: { fontWeight: 'bold' },
-      }} 
+      }}
     />
   </Stack.Navigator>
 );
 
-// App (unchanged)
+// App Content
 const AppContent: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const [showSplash, setShowSplash] = useState(true);
@@ -138,13 +165,11 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     setupNotificationHandler();
 
-    registerForPushNotificationsAsync().then(token => {
-      if (token) {
-        console.log('Push token registered:', token);
-      }
-    }).catch(error => {
-      console.error('Failed to register for push notifications:', error);
-    });
+    registerForPushNotificationsAsync()
+      .then((token) => {
+        if (token) console.log('Push token registered:', token);
+      })
+      .catch((error) => console.error('Failed to register for push notifications:', error));
 
     const unsubscribe = listenForNotifications(dispatch);
     return unsubscribe;
@@ -155,11 +180,10 @@ const AppContent: React.FC = () => {
     return () => clearTimeout(timer);
   }, []);
 
-  return (
-    <NavigationContainer>{showSplash ? <SplashScreen /> : <MainNavigator />}</NavigationContainer>
-  );
+  return <NavigationContainer>{showSplash ? <SplashScreen /> : <MainNavigator />}</NavigationContainer>;
 };
 
+// App
 const App: React.FC = () => (
   <Provider store={store}>
     <AppContent />

@@ -4,11 +4,11 @@
     "slug": "StudyPlannerMobile",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/study_planner_logo.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/study_planner_logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -16,32 +16,33 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/notification-icon.png", 
-          "color": "#ffffff",  
-          "defaultChannel": "default"  
+          "icon": "./assets/notification.png",
+          "color": "#ffffff",
+          "defaultChannel": "default"
         }
-      ]
+      ],
+      "expo-font"
     ],
     "ios": {
       "supportsTablet": true
     },
     "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "adaptiveIcon": {
+        "foregroundImage": "./assets/study_planner_logo.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.StudyPlannerMobile",
-      "useNextNotificationsApi": true
+      "package": "com.anonymous.StudyPlannerMobile"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "extra": {
       "eas": {
-        "projectId": "7e21c657-dd48-4a91-a8ba-c06dcd0884cc" 
-      }
+        "projectId": "7e21c657-dd48-4a91-a8ba-c06dcd0884cc"
+      },
+       "icon": "./assets/study_planner_logo.png"
     }
   }
 }

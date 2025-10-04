@@ -9,6 +9,7 @@ import assignmentReducer from './slices/assignmentSlice';
 import assignmentDetailReducer from './slices/assignmentDetailSlice';
 import notificationReducer from './slices/notificationSlice';
 import messagingReducer from './slices/messagingSlice';
+import taskManagementReducer from './slices/taskManagementSlice';                                                             
 
 export const store = configureStore({
   reducer: {
@@ -21,7 +22,8 @@ export const store = configureStore({
     assignmentSlice: assignmentReducer,
     assignmentDetailSlice: assignmentDetailReducer,
     notificationSlice: notificationReducer,
-    messagingSlice: messagingReducer
+    messagingSlice: messagingReducer,
+    taskManagementSlice: taskManagementReducer
   },
 });
 

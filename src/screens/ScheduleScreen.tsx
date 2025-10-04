@@ -15,7 +15,6 @@ import { useDispatch, useSelector, shallowEqual } from "react-redux";
 import { logout } from "../store/slices/authSlice";
 import { RootState, AppDispatch } from "../store";
 import Modal from "react-native-modal";
-import Icon from "react-native-vector-icons/Ionicons";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
 import { formatInTimeZone } from "date-fns-tz";
 import { vi } from "date-fns/locale";
@@ -49,7 +48,16 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Dimensions } from "react-native";
 import { ScrollView } from "react-native-gesture-handler";
 
-type AuthNav = NativeStackNavigationProp<RootStackParamList, "Schedules">; // Updated to "Schedule"
+// Task Management imports
+import { getTasksByStudent, addTaskManagement, updateTaskManagement, deleteTaskManagement } from "../store/slices/taskManagementSlice";
+import { TaskManagementResponseDTO } from "../domain/entities/TaskManagementDTO/TaskManagementResponseDTO";
+import { TaskManagementRequestDTO } from "../domain/entities/TaskManagementDTO/TaskManagementRequestDTO";
+import { Ionicons } from "@expo/vector-icons";
+
+
+
+
+type AuthNav = NativeStackNavigationProp<RootStackParamList, "Schedule">; // Updated to "Schedule"
 
 const colors = {
   pinkPrimary: "#EC4899",
@@ -77,10 +85,25 @@ const ScheduleScreen: React.FC = () => {
   const [selectedSchedule, setSelectedSchedule] = useState<ScheduleResponseDTO | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Task Management states
+  const [isTaskModalVisible, setTaskModalVisible] = useState(false);
+  const [taskMode, setTaskMode] = useState<'create' | 'update' | null>(null);
+  const [selectedTask, setSelectedTask] = useState<TaskManagementResponseDTO | null>(null);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [isDueDatePickerVisible, setDueDatePickerVisible] = useState(false);
+  const [taskStatusId, setTaskStatusId] = useState(1);
+  const [isTaskStatusPickerVisible, setTaskStatusPickerVisible] = useState(false);
+  const [taskStatusUpdateOnly, setTaskStatusUpdateOnly] = useState(false);
+  const [taskSubmitting, setTaskSubmitting] = useState(false);
+
   const auth = useSelector((state: RootState) => state.auth);
   const teacherClassState = useSelector((state: RootState) => state.teacherClass);
+  const taskState = useSelector((state: RootState) => state.taskManagementSlice);
   const { teachers: availableTeachers = [], loading: teachersLoading = false } =
     teacherClassState || {};
+  const { tasks: allTasks = [], loading: taskLoading = false, error: taskError } = taskState || {};
 
   const [subject, setSubject] = useState("");
   const [startTime, setStartTime] = useState("");
@@ -101,19 +124,36 @@ const ScheduleScreen: React.FC = () => {
   const [statusUpdateOnly, setStatusUpdateOnly] = useState(false);
 
   const classId = auth.user?.classId || "";
+  const studentId = auth.user?.username || "";
   const TIMEZONE = "Asia/Ho_Chi_Minh";
 
   // Permissions: Sử dụng multiple useSelector cho từng perm cụ thể (vì navItems fixed và ít)
   const isAdmin = useSelector(selectIsAdmin);
   const hasSchedulePermission = useSelector(makeSelectCanEdit('ucSchedule'));
-  const hasAssignmentPermission = useSelector(makeSelectCanEdit('ucAssignment'));
-  const canCreateOrUpdate = isAdmin || hasSchedulePermission;
-  const isReadonlyMode = !canCreateOrUpdate; // Nếu không có quyền full, thì readonly
+  const hasTaskPermission = useSelector(makeSelectCanEdit('ucTaskManagement'));
+  const canCreateOrUpdateSchedule = isAdmin || hasSchedulePermission;
+  const canCreateOrUpdateTasks = isAdmin || hasTaskPermission;
+  const isReadonlySchedule = !canCreateOrUpdateSchedule;
+  const isReadonlyTask = !canCreateOrUpdateTasks;
 
   // Validation
   const errors = useSelector(selectValidationErrors, shallowEqual);
   const isFormValid = useSelector(selectIsFormValid);
   const isSubmitting = useSelector(selectIsSubmitting) as boolean;
+
+  // Filtered tasks for selected date
+  const filteredTasks = useMemo(() => {
+    return allTasks.filter((task) => {
+      if (!task.DueDate) return false;
+      try {
+        const due = parse(task.DueDate, "dd/MM/yyyy HH:mm:ss", new Date());
+        if (!isValid(due)) return false;
+        return format(due, "yyyy-MM-dd") === format(selectedDate, "yyyy-MM-dd");
+      } catch {
+        return false;
+      }
+    });
+  }, [allTasks, selectedDate]);
 
   const clearForm = useCallback(() => {
     setSubject("");
@@ -126,22 +166,37 @@ const ScheduleScreen: React.FC = () => {
     dispatch(clearErrors());
   }, [dispatch]);
 
+  const clearTaskForm = useCallback(() => {
+    setTitle("");
+    setDescription("");
+    setDueDate("");
+    setTaskStatusId(1);
+    setTaskStatusUpdateOnly(false);
+  }, []);
+
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     if (auth.user?.username) {
-      dispatch(fetchSchedules(auth.user.username)).unwrap().finally(() => {
+      const promises: Array<Promise<unknown>> = [dispatch(fetchSchedules(auth.user.username))];
+      if (canCreateOrUpdateTasks) {
+        promises.push(dispatch(getTasksByStudent(auth.user.username)));
+      }
+      Promise.all(promises).finally(() => {
         setRefreshing(false);
       });
     } else {
       setRefreshing(false);
     }
-  }, [dispatch, auth.user?.username]);
+  }, [dispatch, auth.user?.username, canCreateOrUpdateTasks]);
 
   useEffect(() => {
     if (auth.user?.username) {
       dispatch(fetchSchedules(auth.user.username));
+      if (canCreateOrUpdateTasks) {
+        dispatch(getTasksByStudent(auth.user.username));
+      }
     }
-  }, [dispatch, auth.user?.username]);
+  }, [dispatch, auth.user?.username, canCreateOrUpdateTasks]);
 
   // Cập nhật: Navigate đến RemindersScreen thay vì mở modal schedule
   const handleReminderPress = useCallback(() => {
@@ -214,11 +269,134 @@ const ScheduleScreen: React.FC = () => {
     setSubject(event.Subject || "");
     setSelectedTeacherId(event.TeacherId || null);
     setStatusId(event.StatusId || 1);
-    setStatusUpdateOnly(isReadonlyMode);
+    setStatusUpdateOnly(isReadonlySchedule);
     setMode('update');
     setModalVisible(true);
     dispatch(clearErrors());
-  }, [selectedDate, isReadonlyMode, dispatch]);
+  }, [selectedDate, isReadonlySchedule, dispatch]);
+
+  // Task Management handlers
+  const handleTaskPress = useCallback((task: TaskManagementResponseDTO) => {
+    setSelectedTask(task);
+    const parseDateTime = (value?: string) => {
+      if (!value) return null;
+      try {
+        const parsed = parse(value, "dd/MM/yyyy HH:mm:ss", new Date());
+        return isValid(parsed) ? parsed : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const due = parseDateTime(task.DueDate);
+    if (due) {
+      setDueDate(format(due, "dd/MM/yyyy HH:mm:ss"));
+    }
+
+    setTitle(task.Title || "");
+    setDescription(task.Description || "");
+    setTaskStatusId(task.StatusId || 1);
+    setTaskStatusUpdateOnly(isReadonlyTask);
+    setTaskMode('update');
+    setTaskModalVisible(true);
+  }, [isReadonlyTask]);
+
+const handleTaskDelete = useCallback(() => {
+    if (!selectedTask) return;
+
+    Alert.alert(
+      "Xác nhận xóa",
+      "Bạn có chắc chắn muốn xóa nhiệm vụ này?",
+      [
+        { text: "Hủy", style: "cancel" },
+        {
+          text: "Xóa",
+          style: "destructive",
+          onPress: async () => {
+            try {
+               console.log(selectedTask.TaskId);
+              await dispatch(deleteTaskManagement(selectedTask.TaskId)).unwrap();
+              // ✅ Thêm log để debug
+              console.log('Delete success, refetching tasks...');
+              if (auth.user?.username) {
+                await dispatch(getTasksByStudent(auth.user.username)).unwrap();
+              }
+              setTaskModalVisible(false);
+              clearTaskForm();
+              Alert.alert("Thành công", "Đã xóa nhiệm vụ.");
+            } catch (err: any) {
+              console.error('Delete error:', err); // ✅ Log error
+              Alert.alert("Lỗi", err || "Xóa thất bại. Vui lòng thử lại.");
+            }
+          },
+        },
+      ]
+    );
+  }, [dispatch, selectedTask, auth.user?.username, clearTaskForm]);
+
+  const handleTaskSubmit = useCallback(async () => {
+    if (isReadonlyTask && !taskStatusUpdateOnly) {
+      Alert.alert("Không có quyền", "Bạn không có quyền thao tác.");
+      return;
+    }
+
+    const dueParsed = parse(dueDate, "dd/MM/yyyy HH:mm:ss", new Date());
+    if (!isValid(dueParsed)) {
+      Alert.alert("Lỗi", "Định dạng ngày giờ không hợp lệ.");
+      return;
+    }
+
+    if (!title.trim()) {
+      Alert.alert("Lỗi", "Tiêu đề không được để trống.");
+      return;
+    }
+
+    const payload: TaskManagementRequestDTO = {
+      TaskId: taskMode === 'update' ? selectedTask!.TaskId : 0,
+      StudentId: studentId,
+      Title: title.trim(),
+      Description: description.trim(),
+      DueDate: dueDate,
+      StatusId: taskStatusId,
+    };
+
+    setTaskSubmitting(true);
+
+    try {
+      let promise;
+      if (taskMode === 'create') {
+        promise = dispatch(addTaskManagement(payload));
+      } else {
+        promise = dispatch(updateTaskManagement(payload));
+      }
+
+      await promise.unwrap();
+      if (auth.user?.username) {
+        dispatch(getTasksByStudent(auth.user.username));
+      }
+      setTaskModalVisible(false);
+      clearTaskForm();
+      Alert.alert(
+        "Thành công",
+        taskMode === "create" ? "Đã thêm nhiệm vụ." : "Đã cập nhật nhiệm vụ."
+      );
+    } catch (err: any) {
+      Alert.alert("Lỗi", err || "Thao tác thất bại. Vui lòng thử lại.");
+    } finally {
+      setTaskSubmitting(false);
+    }
+  }, [dispatch, taskMode, selectedTask, studentId, title, description, dueDate, taskStatusId, clearTaskForm, isReadonlyTask, taskStatusUpdateOnly]);
+
+  const fabTaskOnPress = useCallback(() => {
+    if (isReadonlyTask) {
+      Alert.alert("Không có quyền", "Bạn chỉ có quyền xem nhiệm vụ.");
+      return;
+    }
+    clearTaskForm();
+    setTaskMode('create');
+    setSelectedTask(null);
+    setTaskModalVisible(true);
+  }, [clearTaskForm, isReadonlyTask]);
 
   const handleDelete = useCallback(() => {
     if (!selectedSchedule) return;
@@ -254,7 +432,7 @@ const ScheduleScreen: React.FC = () => {
   const handleSubmit = useCallback(() => {
     dispatch(clearErrors());
 
-    if (isReadonlyMode && !statusUpdateOnly) {
+    if (isReadonlySchedule && !statusUpdateOnly) {
       Alert.alert("Không có quyền", "Bạn không có quyền thao tác.");
       return;
     }
@@ -321,11 +499,11 @@ const ScheduleScreen: React.FC = () => {
       .finally(() => {
         dispatch(setSubmitting(false));
       });
-  }, [dispatch, mode, selectedSchedule, auth.user, classId, subject, selectedTeacher, startTime, endTime, clearForm, isReadonlyMode, statusUpdateOnly, statusId, isFormValid]);
+  }, [dispatch, mode, selectedSchedule, auth.user, classId, subject, selectedTeacher, startTime, endTime, clearForm, isReadonlySchedule, statusUpdateOnly, statusId, isFormValid]);
 
   // Disable nút FAB nếu không có quyền
   const fabOnPress = useCallback(() => {
-    if (isReadonlyMode) {
+    if (isReadonlySchedule) {
       Alert.alert("Không có quyền", "Bạn chỉ có quyền xem lịch trình.");
       return;
     }
@@ -333,14 +511,14 @@ const ScheduleScreen: React.FC = () => {
     setMode('create');
     setSelectedSchedule(null);
     setModalVisible(true);
-  }, [clearForm, isReadonlyMode]);
+  }, [clearForm, isReadonlySchedule]);
 
   // Modal title and submit text
   const modalTitle = mode === 'create' ? 'Tạo lịch mới' : (statusUpdateOnly ? 'Cập nhật trạng thái' : 'Cập nhật lịch');
   const submitText = mode === 'create' ? 'Tạo' : 'Cập nhật';
 
-  const pickerReadonly = isReadonlyMode && !statusUpdateOnly;
-  const fieldReadonly = isReadonlyMode && !statusUpdateOnly;
+  const pickerReadonly = isReadonlySchedule && !statusUpdateOnly;
+  const fieldReadonly = isReadonlySchedule && !statusUpdateOnly;
 
   const handleStatusPress = useCallback(() => {
     setStatusPickerVisible(true);
@@ -348,6 +526,14 @@ const ScheduleScreen: React.FC = () => {
 
   const handleCloseStatusPicker = useCallback(() => {
     setStatusPickerVisible(false);
+  }, []);
+
+  const handleTaskStatusPress = useCallback(() => {
+    setTaskStatusPickerVisible(true);
+  }, []);
+
+  const handleCloseTaskStatusPicker = useCallback(() => {
+    setTaskStatusPickerVisible(false);
   }, []);
 
   return (
@@ -373,19 +559,24 @@ const ScheduleScreen: React.FC = () => {
         <ScheduleSection
           selectedDate={selectedDate}
           onEventPress={handleEventPress}
+          onTaskPress={handleTaskPress}
+          tasks={filteredTasks}
           refreshing={refreshing}
           onRefresh={onRefresh}
+          canCreateOrUpdateSchedule={canCreateOrUpdateSchedule}
+          canCreateOrUpdateTasks={canCreateOrUpdateTasks}
+          onAddTaskPress={fabTaskOnPress}
         />
       </ScrollView>
 
       {/* FAB: Disable nếu không có quyền */}
       <TouchableOpacity
-        className={`absolute bottom-6 right-6 w-16 h-16 rounded-full items-center justify-center shadow-lg ${canCreateOrUpdate ? 'bg-pink-500' : 'bg-gray-400'}`}
+        className={`absolute bottom-6 right-6 w-16 h-16 rounded-full items-center justify-center shadow-lg ${canCreateOrUpdateSchedule ? 'bg-pink-500' : 'bg-gray-400'}`}
         activeOpacity={0.8}
         onPress={fabOnPress}
-        disabled={!canCreateOrUpdate}
+        disabled={!canCreateOrUpdateSchedule}
       >
-        <Icon name="add" size={32} color="#FFF" />
+        <Ionicons name="add" size={32} color="#FFF" />
       </TouchableOpacity>
 
       {/* Modal for Create/Update: Disable nếu readonly */}
@@ -398,7 +589,7 @@ const ScheduleScreen: React.FC = () => {
       >
         <View className="bg-white rounded-2xl p-5">
           <Text className="text-lg font-bold mb-4">
-            {isReadonlyMode ? 'Xem lịch trình' : modalTitle}
+            {isReadonlySchedule ? 'Xem lịch trình' : modalTitle}
           </Text>
 
           <Text className="text-sm font-medium mb-1">Chọn giáo viên:</Text>
@@ -485,7 +676,7 @@ const ScheduleScreen: React.FC = () => {
               activeOpacity={0.7}
               disabled={pickerReadonly}
             >
-              <Icon
+              <Ionicons
                 name="flag-outline"
                 size={20}
                 color={pickerReadonly ? "#9CA3AF" : "#374151"}
@@ -501,17 +692,17 @@ const ScheduleScreen: React.FC = () => {
           )}
 
           {/* Delete Button - Only show in update mode with permission */}
-          {mode === 'update' && canCreateOrUpdate && (
+          {mode === 'update' && canCreateOrUpdateSchedule && (
             <TouchableOpacity
               onPress={handleDelete}
               className="bg-red-500 p-3 rounded-xl mt-3 flex-row items-center justify-center"
             >
-              <Icon name="trash-outline" size={20} color="#FFF"  />
+              <Ionicons name="trash-outline" size={20} color="#FFF"  />
               <Text className="text-center text-white font-semibold">Xóa lịch</Text>
             </TouchableOpacity>
           )}
 
-          {(!isReadonlyMode || statusUpdateOnly) && (
+          {(!isReadonlySchedule || statusUpdateOnly) && (
             <TouchableOpacity
               onPress={handleSubmit}
               className="bg-pink-500 p-3 rounded-xl mt-3"
@@ -531,7 +722,7 @@ const ScheduleScreen: React.FC = () => {
             }}
           >
             <Text className="text-center text-slate-500">
-              {isReadonlyMode ? 'Đóng' : 'Hủy'}
+              {isReadonlySchedule ? 'Đóng' : 'Hủy'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -598,7 +789,7 @@ const ScheduleScreen: React.FC = () => {
                     onPress={handleCloseStatusPicker}
                     className="p-2"
                   >
-                    <Icon name="close" size={24} color="#6B7280" />
+                    <Ionicons name="close" size={24} color="#6B7280" />
                   </TouchableOpacity>
                 </View>
                 <View style={{ height: 200 }}>
@@ -607,6 +798,186 @@ const ScheduleScreen: React.FC = () => {
                     onValueChange={(value: number) => {
                       setStatusId(value);
                       setStatusPickerVisible(false);
+                    }}
+                    style={{
+                      height: 200,
+                    }}
+                    mode="dialog"
+                  >
+                    {STATUS_OPTIONS.map(({ value, label }) => (
+                      <Picker.Item key={value} label={label} value={value} />
+                    ))}
+                  </Picker>
+                </View>
+              </View>
+            </View>
+          </NativeModal>
+        )}
+      </Modal>
+
+      {/* Task Management Modal */}
+      <Modal
+        isVisible={isTaskModalVisible}
+        onBackdropPress={() => {
+          setTaskModalVisible(false);
+          clearTaskForm();
+        }}
+      >
+        <View className="bg-white rounded-2xl p-5">
+          <Text className="text-lg font-bold mb-4">
+            {isReadonlyTask ? 'Xem nhiệm vụ' : (taskMode === 'create' ? 'Tạo nhiệm vụ mới' : (taskStatusUpdateOnly ? 'Cập nhật trạng thái' : 'Cập nhật nhiệm vụ'))}
+          </Text>
+
+          <Text className="text-sm font-medium mb-1">Tiêu đề:</Text>
+          <TextInput
+            placeholder="Tiêu đề nhiệm vụ"
+            value={title}
+            onChangeText={!isReadonlyTask ? setTitle : undefined}
+            editable={!isReadonlyTask}
+            className={`border rounded-lg px-3 py-2 mb-2 ${isReadonlyTask ? 'bg-gray-100 border-gray-300' : 'bg-white border-gray-300'}`}
+          />
+
+          <Text className="text-sm font-medium mb-1">Mô tả:</Text>
+          <TextInput
+            placeholder="Mô tả"
+            value={description}
+            onChangeText={!isReadonlyTask ? setDescription : undefined}
+            editable={!isReadonlyTask}
+            multiline
+            numberOfLines={3}
+            className={`border rounded-lg px-3 py-2 mb-3 ${isReadonlyTask ? 'bg-gray-100 border-gray-300' : 'bg-white border-gray-300'}`}
+          />
+
+          <Text className="text-sm font-medium mb-1">Hạn chót:</Text>
+          <TouchableOpacity
+            onPress={!isReadonlyTask ? () => setDueDatePickerVisible(true) : undefined}
+            disabled={isReadonlyTask}
+            className={`border rounded-lg px-3 py-2 mb-3 ${isReadonlyTask ? 'bg-gray-100 border-gray-300' : 'bg-white border-gray-300'}`}
+          >
+            <Text className={`text-base ${isReadonlyTask ? 'text-slate-500' : 'text-slate-800'}`}>
+              {dueDate ? dueDate : "Chọn ngày giờ hạn chót"}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Status Picker Field - Always show for tasks, but readonly if needed */}
+          <TouchableOpacity
+            className={`flex-row items-center p-4 rounded-2xl shadow-sm shadow-black/5 border ${
+              isReadonlyTask ? "bg-gray-50 border-gray-300" : "bg-white border-gray-300"
+            }`}
+            onPress={isReadonlyTask ? undefined : handleTaskStatusPress}
+            activeOpacity={0.7}
+            disabled={isReadonlyTask}
+          >
+            <Ionicons
+              name="flag-outline"
+              size={20}
+              color={isReadonlyTask ? "#9CA3AF" : "#374151"}
+            />
+            <Text
+              className={`ml-3 text-base ${
+                isReadonlyTask ? "text-gray-500" : "text-gray-900"
+              }`}
+            >
+              Trạng thái: {getStatusLabel(taskStatusId)}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Delete Button - Only show in update mode with permission */}
+          {taskMode === 'update' && canCreateOrUpdateTasks && (
+            <TouchableOpacity
+              onPress={handleTaskDelete}
+              className="bg-red-500 p-3 rounded-xl mt-3 flex-row items-center justify-center"
+            >
+              <Ionicons name="trash-outline" size={20} color="#FFF"  />
+              <Text className="text-center text-white font-semibold">Xóa nhiệm vụ</Text>
+            </TouchableOpacity>
+          )}
+
+          {(!isReadonlyTask || taskStatusUpdateOnly) && (
+            <TouchableOpacity
+              onPress={handleTaskSubmit}
+              className="bg-pink-500 p-3 rounded-xl mt-3"
+              disabled={taskSubmitting}
+            >
+              <Text className="text-center text-white font-semibold">
+                {taskSubmitting ? 'Đang xử lý...' : (taskMode === 'create' ? 'Tạo' : 'Cập nhật')}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity
+            className="mt-2"
+            onPress={() => {
+              setTaskModalVisible(false);
+              clearTaskForm();
+            }}
+          >
+            <Text className="text-center text-slate-500">
+              {isReadonlyTask ? 'Đóng' : 'Hủy'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <DateTimePickerModal
+          isVisible={isDueDatePickerVisible}
+          mode="datetime"
+          onConfirm={(date) => {
+            const uiString = formatInTimeZone(date, TIMEZONE, "dd/MM/yyyy HH:mm:ss");
+            setDueDate(uiString);
+            setDueDatePickerVisible(false);
+          }}
+          onCancel={() => setDueDatePickerVisible(false)}
+        />
+
+        {/* Task Status Picker Modal */}
+        {taskMode && (
+          <NativeModal
+            visible={isTaskStatusPickerVisible}
+            animationType="fade"
+            transparent={true}
+            onRequestClose={handleCloseTaskStatusPicker}
+          >
+            <View
+              style={{
+                flex: 1,
+                backgroundColor: "rgba(0, 0, 0, 0.5)",
+                justifyContent: "flex-end",
+              }}
+            >
+              <TouchableOpacity
+                style={{ flex: 1 }}
+                activeOpacity={1}
+                onPress={handleCloseTaskStatusPicker}
+              />
+              <View
+                style={{
+                  backgroundColor: "white",
+                  borderTopLeftRadius: 20,
+                  borderTopRightRadius: 20,
+                  width: screenWidth,
+                  paddingHorizontal: 20,
+                  paddingVertical: 20,
+                  paddingBottom: insets.bottom + 20,
+                  minHeight: 250,
+                }}
+              >
+                <View className="flex-row justify-between items-center mb-4">
+                  <Text className="text-lg font-semibold text-gray-900">
+                    Chọn trạng thái
+                  </Text>
+                  <TouchableOpacity
+                    onPress={handleCloseTaskStatusPicker}
+                    className="p-2"
+                  >
+                    <Ionicons name="close" size={24} color="#6B7280" />
+                  </TouchableOpacity>
+                </View>
+                <View style={{ height: 200 }}>
+                  <Picker
+                    selectedValue={taskStatusId}
+                    onValueChange={(value: number) => {
+                      setTaskStatusId(value);
+                      setTaskStatusPickerVisible(false);
                     }}
                     style={{
                       height: 200,

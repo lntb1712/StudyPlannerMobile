@@ -37,9 +37,10 @@ import { ReminderRequestDTO } from "../domain/entities/ReminderDTO/ReminderReque
 import { ReminderResponseDTO } from "../domain/entities/ReminderDTO/ReminderResponseDTO";
 import { RootStackParamList } from "../navigation/types";
 import {
-  makeSelectHasPermission,
+  makeSelectCanEdit,
   selectIsAdmin,
 } from "../store/slices/permissionsSlice";
+import Header from "../components/Header";
 
 type RemindersNav = NativeStackNavigationProp<RootStackParamList, "Reminders">;
 
@@ -74,9 +75,7 @@ const RemindersScreen: React.FC = () => {
   const userId = auth.user?.username || "";
 
   const isAdmin = useSelector(selectIsAdmin);
-  const hasReminderPermission = useSelector(
-    makeSelectHasPermission("ucReminder")
-  );
+  const hasReminderPermission = useSelector(makeSelectCanEdit("ucReminder"));
   const canCreateOrUpdate = isAdmin || hasReminderPermission;
   const isReadonlyMode = !canCreateOrUpdate;
 
@@ -322,9 +321,9 @@ const RemindersScreen: React.FC = () => {
           <View className="flex-row justify-end gap-3 mt-3">
             <TouchableOpacity
               onPress={() => handleEditPress(item)}
-              className="p-2 rounded-lg bg-pink-100"
+              className="p-2 rounded-lg bg-blue-100"
             >
-              <Icon name="create-outline" size={20} color="#EC4899" />
+              <Icon name="create-outline" size={20} color="#3B82F6" />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => handleDeletePress(item)}
@@ -369,34 +368,62 @@ const RemindersScreen: React.FC = () => {
 
   const pickerReadonly = isReadonlyMode && !statusUpdateOnly;
 
+  // Header handlers
+  const handleOpenSidebar = useCallback(() => {
+    // @ts-ignore
+    navigation.openDrawer();
+  }, [navigation]);
+
+  const handleReminderPress = useCallback(() => {
+    navigation.navigate("Reminders");
+  }, [navigation]);
+
+  const handleNotificationPress = useCallback(() => {
+    navigation.navigate("Notifications");
+  }, [navigation]);
+
   return (
     <SafeAreaView className="flex-1 bg-gray-50">
-      <FlatList
-        data={reminders.filter((item) => item?.ReminderId !== undefined)}
-        keyExtractor={(item, index) =>
-          item.ReminderId ? item.ReminderId.toString() : index.toString()
-        }
-        renderItem={renderReminderItem}
-        contentContainerClassName="p-4 pb-24"
-        ListEmptyComponent={
-          <View className="flex-1 justify-center items-center pt-12">
-            <Icon name="notifications-off-outline" size={64} color="#D1D5DB" />
-            <Text className="mt-4 text-base text-gray-500 text-center">
-              Chưa có nhắc nhở nào.
-            </Text>
-          </View>
-        }
-        refreshing={loading}
-        onRefresh={() => userId && dispatch(getRemindersByUser(userId))}
-        showsVerticalScrollIndicator={false}
-      />
+      <View className="p-4">
+        <Header
+          onOpenSidebar={handleOpenSidebar}
+          onReminderPress={handleReminderPress}
+          onNotificationPress={handleNotificationPress}
+        />
+        <FlatList
+          data={reminders.filter((item) => item?.ReminderId !== undefined)}
+          keyExtractor={(item, index) =>
+            item.ReminderId ? item.ReminderId.toString() : index.toString()
+          }
+          renderItem={renderReminderItem}
+          contentContainerClassName="p-4 pb-24"
+          ListEmptyComponent={
+            <View className="flex-1 justify-center items-center pt-12">
+              <Icon
+                name="notifications-off-outline"
+                size={64}
+                color="#D1D5DB"
+              />
+              <Text className="mt-4 text-base text-gray-500 text-center">
+                Chưa có nhắc nhở nào.
+              </Text>
+            </View>
+          }
+          refreshing={loading}
+          onRefresh={() => userId && dispatch(getRemindersByUser(userId))}
+          showsVerticalScrollIndicator={false}
+        />
+      </View>
 
       {/* FAB */}
       <TouchableOpacity
-        className="absolute bottom-6 right-6 w-16 h-16 rounded-full shadow-lg shadow-black/40 bg-pink-500 justify-center items-center"
+        className="absolute bottom-6 right-6 w-16 h-16 rounded-full shadow-lg shadow-black/40 justify-center items-center"
         onPress={handleAddPress}
         disabled={!canCreateOrUpdate}
         activeOpacity={0.85}
+        style={{
+          backgroundColor: canCreateOrUpdate ? "#EC4899" : "#9CA3AF", // pink khi enable, xám khi disable
+        }}
       >
         <Icon name="add" size={28} color="#FFF" />
       </TouchableOpacity>

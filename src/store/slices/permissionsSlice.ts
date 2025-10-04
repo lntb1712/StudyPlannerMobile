@@ -1,23 +1,20 @@
-// src/store/slices/permissionsSlice.ts
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import {jwtDecode}  from 'jwt-decode'; // ✅ dùng default import
+import {jwtDecode} from 'jwt-decode';
 
-// Interface cho JWT claims
 export interface TokenClaims {
   nameid: string;
   unique_name: string;
   role: string;
-  Permission: (string | object)[]; // Có thể là string JSON hoặc object
+  Permission: (string | object)[];
   nbf: number;
   exp: number;
   iat: number;
 }
 
-// Interface cho parsed permissions
 export interface ParsedPermission {
   id: string;
   ro: boolean;
-  isenable: boolean; // true nếu có id (bật chức năng), false nếu không
+  isenable: boolean; // true nếu có id, false nếu không
 }
 
 export interface PermissionsState {
@@ -28,7 +25,6 @@ export interface PermissionsState {
   error: string | null;
 }
 
-// Initial state
 const initialState: PermissionsState = {
   token: null,
   claims: null,
@@ -37,23 +33,23 @@ const initialState: PermissionsState = {
   error: null,
 };
 
-// ✅ Helper function parse cả string JSON lẫn object
+// Parse cả string JSON lẫn object
 const parsePermissions = (permissions: (string | object)[]): { [key: string]: ParsedPermission } => {
   const parsed: { [key: string]: ParsedPermission } = {};
   permissions.forEach((perm) => {
     try {
-      const permObj = typeof perm === "string" ? JSON.parse(perm) : perm;
+      const permObj = typeof perm === 'string' ? JSON.parse(perm) : perm;
       if (permObj.id) {
         parsed[permObj.id] = {
           id: permObj.id,
-          ro: permObj.ro ?? false, // default full access nếu không có ro
+          ro: permObj.ro ?? false,
           isenable: true,
         };
       } else {
-        console.warn("Permission without id:", perm);
+        console.warn('Permission without id:', perm);
       }
     } catch (e) {
-      console.error("Failed to parse permission:", perm, e);
+      console.error('Failed to parse permission:', perm, e);
     }
   });
   return parsed;
@@ -63,7 +59,6 @@ const permissionsSlice = createSlice({
   name: 'permissions',
   initialState,
   reducers: {
-    // Set token và decode
     setToken: (state, action: PayloadAction<string>) => {
       try {
         state.token = action.payload;
@@ -78,8 +73,6 @@ const permissionsSlice = createSlice({
         console.error('Token decode error:', error);
       }
     },
-
-    // Clear permissions (logout)
     clearPermissions: (state) => {
       state.token = null;
       state.claims = null;
@@ -87,8 +80,6 @@ const permissionsSlice = createSlice({
       state.isLoaded = false;
       state.error = null;
     },
-
-    // Update permissions manually (refresh token)
     updatePermissions: (
       state,
       action: PayloadAction<{ claims: TokenClaims; parsedPermissions: { [key: string]: ParsedPermission } }>
@@ -105,27 +96,36 @@ const permissionsSlice = createSlice({
 export const { setToken, clearPermissions, updatePermissions } = permissionsSlice.actions;
 
 // Selectors
+export const selectParsedPermissions = (state: any) => state.permissions?.parsedPermissions;
 export const selectToken = (state: any) => state.permissions?.token;
 export const selectClaims = (state: any) => state.permissions?.claims;
-export const selectParsedPermissions = (state: any) => state.permissions?.parsedPermissions;
 export const selectIsLoaded = (state: any) => state.permissions?.isLoaded ?? false;
-export const selectError = (state: any) => state.permissions?.error;
 export const selectRole = (state: any) => state.permissions?.claims?.role;
 export const selectIsAdmin = (state: any) => state.permissions?.claims?.role === 'ADMIN';
 
-// ✅ Factory selector để dùng với useSelector
-export const makeSelectHasPermission = (id: string, allowReadonly = false) =>
-  (state: any) => {
-    const perms = state.permissionSlice?.parsedPermissions; // ✅ match store key
-    if (!perms) return false;
+// Menu hiển thị (readonly vẫn hiện)
+export const makeSelectCanDisplay = (id: string) => (state: any) => {
+  const perms = state.permissions?.parsedPermissions;
+  if (!perms) return false;
+  const permObj = perms[id];
+  if (!permObj) return false;
+  return permObj.isenable;
+};
 
-    const permObj = perms[id]; // already ParsedPermission object
-    if (!permObj) return false;
-    if (!permObj.isenable) return false;
+// Có quyền thao tác (chỉ khi không readonly)
+export const makeSelectCanEdit = (id: string) => (state: any) => {
+  const perms = state.permissions?.parsedPermissions;
+  if (!perms) return false;
+  const permObj = perms[id];
+  if (!permObj || !permObj.isenable) return false;
+  return !permObj.ro;
+};
 
-    return allowReadonly ? true : !permObj.ro;
-  };
+// Lấy object permission đầy đủ
+export const makeSelectPermission = (id: string) => (state: any) => {
+  const perms = state.permissions?.parsedPermissions;
+  if (!perms) return null;
+  return perms[id] || null;
+};
 
-export const selectHasPermission = makeSelectHasPermission;
-// Reducer
 export default permissionsSlice.reducer;

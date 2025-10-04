@@ -3,7 +3,6 @@ import React, { useEffect } from "react";
 import { View, Text, ScrollView, TouchableOpacity, Alert, RefreshControl } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import { RootState, AppDispatch } from "../store";
-import { fetchSchedules } from "../store/slices/scheduleSlice";
 import { ScheduleResponseDTO } from "../domain/entities/ScheduleDTO/ScheduleResponseDTO";
 import { parse, isValid, format, getDay } from "date-fns";
 import { vi } from "date-fns/locale";
@@ -11,6 +10,8 @@ import { vi } from "date-fns/locale";
 type ScheduleSectionProps = {
   selectedDate: Date;
   onEventPress: (event: ScheduleResponseDTO) => void;
+  refreshing: boolean;
+  onRefresh: () => void;
 };
 
 const generateTimeSlots = () => {
@@ -41,21 +42,15 @@ const getEventPositionAndHeight = (
   return { top, height };
 };
 
-const ScheduleSection: React.FC<ScheduleSectionProps> = ({ selectedDate, onEventPress }) => {
+const ScheduleSection: React.FC<ScheduleSectionProps> = ({ selectedDate, onEventPress, refreshing, onRefresh }) => {
   const dispatch = useDispatch<AppDispatch>();
-  const { schedules, loading, error } = useSelector(
+  const { schedules, error } = useSelector(
     (state: RootState) => state.schedule
   );
   const auth = useSelector((state: RootState) => state.auth);
 
   const timeSlots = generateTimeSlots();
   const slotHeight = 60;
-
-  useEffect(() => {
-    if (auth.user?.username) {
-      dispatch(fetchSchedules(auth.user.username));
-    }
-  }, [dispatch, auth.user]);
 
   useEffect(() => {
     if (error) {
@@ -71,12 +66,6 @@ const ScheduleSection: React.FC<ScheduleSectionProps> = ({ selectedDate, onEvent
       return isValid(parsed) ? parsed : null;
     } catch {
       return null;
-    }
-  };
-
-  const handleRefresh = () => {
-    if (auth.user?.username) {
-      dispatch(fetchSchedules(auth.user.username));
     }
   };
 
@@ -100,9 +89,8 @@ const ScheduleSection: React.FC<ScheduleSectionProps> = ({ selectedDate, onEvent
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        className="max-h-[60vh]"
         refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={handleRefresh} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
         <View className="flex-row relative">

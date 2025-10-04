@@ -5,12 +5,14 @@ import { TeacherClassResponseDTO } from "../../domain/entities/TeacherClassDTO/T
 
 interface TeacherClassState {
   teachers: TeacherClassResponseDTO[];
+  classes: TeacherClassResponseDTO[];
   loading: boolean;
   error: string | null;
 }
 
 const initialState: TeacherClassState = {
   teachers: [],
+  classes: [],
   loading: false,
   error: null,
 };
@@ -37,6 +39,28 @@ export const fetchTeachersByClassId = createAsyncThunk(
   }
 );
 
+// 📌 Lấy danh sách lớp theo TeacherId
+export const fetchClassesByTeacherId = createAsyncThunk(
+  "teacherClass/fetchByTeacherId",
+  async (teacherId: string, { rejectWithValue }) => {
+    try {
+      const rawResponse = await http.get(
+        `/TeacherClass/GetClassByTeacherID?teacherId=${teacherId}`
+      );
+      const apiResponse = ApiResponse.fromJson<TeacherClassResponseDTO[]>(
+        rawResponse,
+        (data) => data
+      );
+      if (!apiResponse.isSuccess() || !apiResponse.data) {
+        return rejectWithValue(apiResponse.message || "Không lấy được danh sách lớp học");
+      }
+      return apiResponse.data;
+    } catch (error: any) {
+      return rejectWithValue(error.message || "Lỗi không xác định");
+    }
+  }
+);
+
 const teacherClassSlice = createSlice({
   name: "teacherClass",
   initialState,
@@ -55,6 +79,21 @@ const teacherClassSlice = createSlice({
         }
       )
       .addCase(fetchTeachersByClassId.rejected, (state, action: any) => {
+        state.loading = false;
+        state.error = action.payload;
+      })
+      // fetch by teacherId
+      .addCase(fetchClassesByTeacherId.pending, (state) => {
+        state.loading = true;
+      })
+      .addCase(
+        fetchClassesByTeacherId.fulfilled,
+        (state, action: PayloadAction<TeacherClassResponseDTO[]>) => {
+          state.loading = false;
+          state.classes = action.payload;
+        }
+      )
+      .addCase(fetchClassesByTeacherId.rejected, (state, action: any) => {
         state.loading = false;
         state.error = action.payload;
       });

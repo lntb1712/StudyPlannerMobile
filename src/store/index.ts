@@ -1,19 +1,27 @@
-import { configureStore } from "@reduxjs/toolkit";
-import authReducer from "./slices/authSlice";
-import scheduleReducer from "./slices/scheduleSlice"; // ✅ thêm dòng này
-import teacherClassReducer from "./slices/teacherClassSlice"
-import validateReducer from "./slices/validationSlice"
-import permissionReducer from "./slices/permissionsSlice"
-import reminderReducer from "./slices/ReminderSlice"
+import { configureStore } from '@reduxjs/toolkit';
+import authReducer from './slices/authSlice';
+import scheduleReducer from './slices/scheduleSlice';
+import teacherClassReducer from './slices/teacherClassSlice';
+import validateReducer from './slices/validationSlice';
+import permissionReducer from './slices/permissionsSlice';
+import reminderReducer from './slices/ReminderSlice';
+import assignmentReducer from './slices/assignmentSlice';
+import assignmentDetailReducer from './slices/assignmentDetailSlice';
+import notificationReducer from './slices/notificationSlice';
+import messagingReducer from './slices/messagingSlice';
 
 export const store = configureStore({
   reducer: {
     auth: authReducer,
-    schedule: scheduleReducer, // ✅ add vào store
+    schedule: scheduleReducer,
     teacherClass: teacherClassReducer,
     validateSlice: validateReducer,
-    permissionSlice: permissionReducer,
-    reminderSlice: reminderReducer
+    permissions: permissionReducer, // ✅ key chính xác
+    reminderSlice: reminderReducer,
+    assignmentSlice: assignmentReducer,
+    assignmentDetailSlice: assignmentDetailReducer,
+    notificationSlice: notificationReducer,
+    messagingSlice: messagingReducer
   },
 });
 

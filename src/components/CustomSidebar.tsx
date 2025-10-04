@@ -4,23 +4,32 @@ import { View, Text, Image, TouchableOpacity } from "react-native";
 import {
   DrawerContentScrollView,
   DrawerItemList,
+  DrawerContentComponentProps,
 } from "@react-navigation/drawer";
+import { CommonActions } from "@react-navigation/native";
 import Icon from "react-native-vector-icons/Ionicons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useDispatch } from "react-redux";
-import { logout } from "../store/slices/authSlice";  // Adjust path if needed
-import { AppDispatch } from "../store";  // Import AppDispatch from store config
+import { logout } from "../store/slices/authSlice";
+import { AppDispatch } from "../store";
 
-const CustomSidebar = (props: any) => {
-  const dispatch = useDispatch<AppDispatch>();  // Type dispatch with AppDispatch
+const CustomSidebar: React.FC<DrawerContentComponentProps> = (props) => {
+  const dispatch = useDispatch<AppDispatch>();
+  const { navigation } = props; // Destructure navigation from props explicitly
 
   const handleLogout = async () => {
     try {
-      await dispatch(logout()).unwrap();  // Await thunk success (clear auth state)
-      props.navigation.replace("Login");  // Navigate sau khi state đã clean
+      await dispatch(logout()).unwrap();
+      
+      // Reset to Login screen in the root stack
+      navigation.dispatch(
+        CommonActions.reset({
+          index: 0,
+          routes: [{ name: 'Login' }],
+        })
+      );
     } catch (error) {
-      console.error("Logout failed:", error);  // Optional: Handle error (e.g., Alert)
-      // Có thể fallback navigate nếu cần
+      console.error("Logout failed:", error);
     }
   };
 
@@ -32,9 +41,7 @@ const CustomSidebar = (props: any) => {
           source={require("../../assets/study_planner_logo.png")}
           className="w-10 h-10 mr-3"
         />
-        <Text className="text-xl font-bold text-slate-800">
-          Study Planner
-        </Text>
+        <Text className="text-xl font-bold text-slate-800">Study Planner</Text>
       </View>
 
       {/* Navigation Items */}
@@ -52,9 +59,7 @@ const CustomSidebar = (props: any) => {
           onPress={handleLogout}
         >
           <Icon name="log-out-outline" size={22} color="#EA4335" />
-          <Text className="ml-3 text-base text-red-500 font-medium">
-            Đăng xuất
-          </Text>
+          <Text className="ml-3 text-base text-red-500 font-medium">Đăng xuất</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>

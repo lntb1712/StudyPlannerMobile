@@ -12,6 +12,16 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png", 
+          "color": "#ffffff",  
+          "defaultChannel": "default"  
+        }
+      ]
+    ],
     "ios": {
       "supportsTablet": true
     },
@@ -22,10 +32,16 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.StudyPlannerMobile"
+      "package": "com.anonymous.StudyPlannerMobile",
+      "useNextNotificationsApi": true
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "7e21c657-dd48-4a91-a8ba-c06dcd0884cc" 
+      }
     }
   }
 }

@@ -1,5 +1,3 @@
-import { AssignmentResponseDTO } from "../AssignmentDTO/AssignmentResponseDTO";
-
 export class NotificationResponseDTO {
   NotificationId: number;
   UserName: string;
